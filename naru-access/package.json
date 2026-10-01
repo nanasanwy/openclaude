@@ -1,0 +1,23 @@
+{
+  "name": "naru-access",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Naru Hartamas play access system: bands, gates, timers, packages, dashboard and reports.",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "sim": "bun run src/main.ts --sim --seed",
+    "lane": "bun run src/lane/controller.ts",
+    "backup": "bun run scripts/backup.ts",
+    "test": "bun test ./test",
+    "typecheck": "tsc --noEmit -p .",
+    "compile": "bun build src/main.ts --compile --outfile dist/naru-access"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "typescript": "5"
+  }
+}

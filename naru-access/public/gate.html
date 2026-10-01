@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gate Display</title>
+  <style>
+    :root { --idle: #1b1e24; --green: #0f8a3c; --red: #c0261b; --amber: #b86e00; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      background: var(--idle); color: #fff; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+      transition: background .15s; overflow: hidden; cursor: none;
+    }
+    body.green { background: var(--green); }
+    body.red { background: var(--red); }
+    body.held { background: var(--amber); }
+    #icon { font-size: min(30vw, 30vh); line-height: 1; font-weight: 800; }
+    #message { font-size: min(9vw, 12vh); font-weight: 800; padding: 0 4vw; }
+    #sub { font-size: min(4vw, 5vh); opacity: .85; margin-top: 2vh; }
+    #status { position: fixed; bottom: 8px; right: 12px; font-size: 12px; opacity: .5; }
+  </style>
+</head>
+<body>
+  <div id="icon"></div>
+  <div id="message">Scan your band</div>
+  <div id="sub"></div>
+  <div id="status">connecting…</div>
+  <script type="module" src="/gate.js"></script>
+</body>
+</html>
