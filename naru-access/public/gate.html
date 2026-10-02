@@ -3,29 +3,44 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Gate Display</title>
+  <title>Naru Gate</title>
+  <link rel="icon" href="brand/naru-mark.png">
   <style>
-    :root { --idle: #1b1e24; --green: #0f8a3c; --red: #c0261b; --amber: #b86e00; }
+    @font-face { font-family: 'Manrope'; src: url('fonts/manrope-latin.woff2') format('woff2'); font-weight: 400 800; }
+    @font-face { font-family: 'Plus Jakarta Sans'; src: url('fonts/plus-jakarta-sans-latin.woff2') format('woff2'); font-weight: 400 700; }
+    /* Guest-facing screen. Idle is the brand cream; decisions take the whole screen so they read from metres away. */
+    :root {
+      --cream: #fef9ef; --ink: #1d1c16; --coffee: #795649;
+      --open: #5a6335; --on-open: #fef9ef;
+      --refused: #ba1a1a; --on-refused: #ffffff;
+      --held: #9a461b; --on-held: #ffffff;
+      color-scheme: light;
+    }
     html, body { margin: 0; height: 100%; }
     body {
-      background: var(--idle); color: #fff; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-      display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
-      transition: background .15s; overflow: hidden; cursor: none;
+      background: var(--cream); color: var(--ink); font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2vh; text-align: center;
+      transition: background-color .2s cubic-bezier(.4,0,.2,1); overflow: hidden; cursor: none; padding: 0 5vw; box-sizing: border-box;
     }
-    body.green { background: var(--green); }
-    body.red { background: var(--red); }
-    body.held { background: var(--amber); }
-    #icon { font-size: min(30vw, 30vh); line-height: 1; font-weight: 800; }
-    #message { font-size: min(9vw, 12vh); font-weight: 800; padding: 0 4vw; }
-    #sub { font-size: min(4vw, 5vh); opacity: .85; margin-top: 2vh; }
+    body.green { background: var(--open); color: var(--on-open); }
+    body.red { background: var(--refused); color: var(--on-refused); }
+    body.held { background: var(--held); color: var(--on-held); }
+    #logo { width: min(46vw, 46vh); height: auto; }
+    body:not(.idle) #logo { display: none; }
+    #icon { font: 800 min(26vw, 26vh)/1 'Manrope', system-ui, sans-serif; }
+    #message { font: 800 min(8.5vw, 11vh)/1.1 'Manrope', system-ui, sans-serif; letter-spacing: -0.02em; text-wrap: balance; }
+    #sub { font-size: min(3.6vw, 4.6vh); opacity: .85; }
+    body.idle #sub { color: var(--coffee); text-transform: uppercase; letter-spacing: .12em; font-weight: 600; font-size: min(2.6vw, 3.4vh); }
+    body.idle #message { font-size: min(6vw, 8vh); }
     #status { position: fixed; bottom: 8px; right: 12px; font-size: 12px; opacity: .5; }
   </style>
 </head>
-<body>
+<body class="idle">
+  <img id="logo" src="brand/naru-logo.png" alt="Naru Play Café">
   <div id="icon"></div>
   <div id="message">Scan your band</div>
   <div id="sub"></div>
   <div id="status">connecting…</div>
-  <script type="module" src="/gate.js"></script>
+  <script type="module" src="gate.js"></script>
 </body>
 </html>

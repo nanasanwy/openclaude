@@ -1,12 +1,13 @@
 import { liveSocket } from './lib.js'
 
-const lane = new URLSearchParams(location.search).get('lane') === 'out' ? 'out' : 'in'
+// ?lane=out on the venue screens; #out also works where a query string is not available.
+const lane = new URLSearchParams(location.search).get('lane') === 'out' || location.hash === '#out' ? 'out' : 'in'
 const icon = document.getElementById('icon')
 const message = document.getElementById('message')
 const sub = document.getElementById('sub')
 const status = document.getElementById('status')
 const idleText = lane === 'in' ? 'Scan your band to enter' : 'Scan your band to leave'
-const subIdle = lane === 'in' ? 'Welcome to Naru' : 'Adults first, then kids'
+const subIdle = lane === 'in' ? 'Play zone entrance' : 'Adults first, then kids'
 
 let held = null // 'fire' | 'held' | null
 let timer = null
@@ -21,7 +22,7 @@ function show(kind, iconText, text, subText) {
 function idle() {
   if (held === 'fire') show('red', '!', 'Emergency', 'Gates are open. Please leave calmly.')
   else if (held === 'held') show('held', '', 'Gate open', 'Please walk through')
-  else show('', '', idleText, subIdle)
+  else show('idle', '', idleText, subIdle)
 }
 
 idle()

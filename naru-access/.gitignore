@@ -2,3 +2,4 @@ data/
 backups/
 dist/
 node_modules/
+demo-dist/

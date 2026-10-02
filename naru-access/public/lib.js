@@ -184,21 +184,32 @@ export async function download(path, filename) {
 }
 
 /**
- * Draws a shareable e-invite card (1080 x 1500 px, sized for phones and WhatsApp)
- * with the party details and a scannable QR code. `qr.rows` is the server's QR matrix.
+ * Draws a shareable e-invite card (1080 x 1500 px, sized for phones and WhatsApp) in the Naru
+ * brand: logo, cream paper, Manrope headline and a scannable QR. `qr.rows` is the server's QR matrix.
  */
-export function inviteCard({ venueName, party, qr }) {
+export async function inviteCard({ venueName, party, qr }) {
   const rows = qr.rows
   const W = 1080
   const H = 1500
+  const C = { cream: '#fef9ef', paper: '#ffffff', ink: '#1d1c16', ink2: '#46483d', coffee: '#795649', olive: '#5a6335', pale: '#f2ede3' }
+  const logo = new Image()
+  logo.src = 'brand/naru-logo.png'
+  await Promise.all([
+    logo.decode().catch(() => null),
+    document.fonts?.load('800 66px Manrope').catch(() => null),
+    document.fonts?.load('600 40px "Plus Jakarta Sans"').catch(() => null),
+  ])
   const canvas = el('canvas', { width: W, height: H })
   const ctx = canvas.getContext('2d')
-  const font = (weight, px, family = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif') => `${weight} ${px}px ${family}`
-  const centered = (text, y, f, color = '#16181d') => {
+  const display = (weight, px) => `${weight} ${px}px Manrope, "Plus Jakarta Sans", system-ui, sans-serif`
+  const body = (weight, px) => `${weight} ${px}px "Plus Jakarta Sans", system-ui, sans-serif`
+  const centered = (text, y, f, color, spacing = 0) => {
     ctx.font = f
     ctx.fillStyle = color
     ctx.textAlign = 'center'
+    if ('letterSpacing' in ctx) ctx.letterSpacing = `${spacing}px`
     ctx.fillText(text, W / 2, y)
+    if ('letterSpacing' in ctx) ctx.letterSpacing = '0px'
   }
   const wrap = (text, f, maxWidth, maxLines) => {
     ctx.font = f
@@ -218,46 +229,57 @@ export function inviteCard({ venueName, party, qr }) {
     }
     return lines
   }
+  const roundRect = (x, y, w, h, r, color) => {
+    ctx.fillStyle = color
+    ctx.beginPath()
+    ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h)
+    ctx.fill()
+  }
 
-  ctx.fillStyle = '#ffffff'
+  ctx.fillStyle = C.cream
   ctx.fillRect(0, 0, W, H)
-  ctx.fillStyle = '#2456d6'
-  ctx.fillRect(0, 0, W, 150)
-  centered(venueName, 98, font(800, 56), '#ffffff')
 
-  let y = 250
-  centered("You're invited to", y, font(500, 40), '#5d6470')
-  y += 86
-  for (const line of wrap(party.name, font(800, 66), W - 120, 2)) {
-    centered(line, y, font(800, 66))
+  let y = 90
+  if (logo.complete && logo.naturalWidth) {
+    const lw = 360
+    const lh = (logo.naturalHeight / logo.naturalWidth) * lw
+    ctx.drawImage(logo, (W - lw) / 2, y, lw, lh)
+    y += lh + 96
+  } else {
+    centered(venueName, y + 60, display(800, 60), C.olive)
+    y += 156
+  }
+  centered("YOU'RE INVITED TO", y, body(600, 30), C.coffee, 5)
+  y += 84
+  for (const line of wrap(party.name, display(800, 66), W - 140, 2)) {
+    centered(line, y, display(800, 66), C.ink, -1)
     y += 80
   }
-  y += 6
-  centered(fmtDateLong(party.startAt), y, font(600, 40))
-  y += 56
-  centered(`${fmtTime(party.startAt)} – ${fmtTime(party.endAt)} · ${party.room}`, y, font(500, 40), '#5d6470')
+  y += 10
+  centered(fmtDateLong(party.startAt), y, body(700, 38), C.ink)
+  y += 54
+  centered(`${fmtTime(party.startAt)} – ${fmtTime(party.endAt)} · ${party.room}`, y, body(500, 36), C.ink2)
 
-  // QR with its 4-module quiet zone, scaled to whole pixels so every module stays sharp.
+  // QR on a white panel with its 4-module quiet zone, whole pixels per module so it stays sharp.
   const modules = rows.length + 8
-  const scale = Math.floor(620 / modules)
+  const scale = Math.floor(540 / modules)
   const qrPx = modules * scale
-  const qx = Math.round((W - qrPx) / 2)
-  const qy = y + 50
-  ctx.fillStyle = '#ffffff'
-  ctx.fillRect(qx, qy, qrPx, qrPx)
-  ctx.fillStyle = '#000000'
+  const panel = qrPx + 48
+  const px = Math.round((W - panel) / 2)
+  const py = y + 50
+  roundRect(px, py, panel, panel, 36, C.paper)
+  const qx = px + 24
+  const qy = py + 24
+  ctx.fillStyle = C.ink
   rows.forEach((row, r) => {
     for (let c = 0; c < row.length; c++) if (row[c] === '1') ctx.fillRect(qx + (c + 4) * scale, qy + (r + 4) * scale, scale, scale)
   })
-  ctx.strokeStyle = '#d9dde3'
-  ctx.lineWidth = 2
-  ctx.strokeRect(qx - 1, qy - 1, qrPx + 2, qrPx + 2)
 
-  y = qy + qrPx + 70
-  centered('Invite code', y, font(500, 34), '#5d6470')
-  y += 80
-  centered(party.inviteCode.split('').join(' '), y, font(800, 76, 'ui-monospace, Menlo, Consolas, monospace'))
-  y += 80
-  centered('Show this at reception when you arrive', y, font(500, 36), '#5d6470')
+  y = py + panel + 76
+  centered('INVITE CODE', y, body(600, 26), C.coffee, 4)
+  y += 76
+  centered(party.inviteCode.split('').join(' '), y, `800 70px ui-monospace, Menlo, Consolas, monospace`, C.olive)
+  roundRect(0, H - 92, W, 92, 0, C.pale)
+  centered('Show this at reception when you arrive', H - 34, body(600, 32), C.ink2)
   return canvas
 }

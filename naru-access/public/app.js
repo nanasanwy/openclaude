@@ -96,7 +96,7 @@ function topbar() {
   refreshCap()
   onLive(msg => msg.type === 'changed' && refreshCap())
   return el('header', { class: 'topbar' },
-    el('a', { href: '#/', class: 'brand' }, state.meta.venueName),
+    el('a', { href: '#/', class: 'brand', 'aria-label': `${state.meta.venueName} home` }, el('img', { src: 'brand/naru-logo.png', alt: 'Naru Play Café' })),
     state.meta.sim ? el('span', { class: 'badge warn' }, 'SIMULATOR') : null,
     el('span', { class: 'row small' }, 'Capacity', cap),
     el('span', { class: 'spacer' }),
@@ -109,7 +109,15 @@ async function logout() {
   await api('/api/logout', { body: {} }).catch(() => {})
   session.token = null
   state.socketClose?.()
-  location.hash = ''
+  state.socketClose = null
+  state.me = null
+  state.permissions = []
+  // Stop routing before clearing the hash, or the hash change re-renders the old user's screens.
+  window.onhashchange = null
+  for (const c of cleanups) c()
+  cleanups = []
+  state.listeners.clear()
+  history.replaceState(null, '', location.pathname + location.search)
   renderLogin()
 }
 
@@ -147,8 +155,9 @@ function renderLogin() {
   }
   show()
   clear(app, el('div', { class: 'login card' },
-    el('h1', {}, state.meta.venueName),
-    state.meta.sim ? el('p', { class: 'badge warn' }, 'Simulator — demo PINs are printed in the server console') : null,
+    el('img', { class: 'login-logo', src: 'brand/naru-logo.png', alt: 'Naru Play Café' }),
+    el('h1', { style: { fontSize: '1.3rem' } }, `${state.meta.venueName} access`),
+    state.meta.sim ? el('p', { class: 'banner warn small', style: { fontWeight: 600 } }, 'Simulator: test data only') : null,
     msg, dots, pad))
 }
 
@@ -167,6 +176,7 @@ function home(main) {
     ['staff.manage', '#/staff', 'Staff', 'Accounts and PINs'],
   ].filter(([p]) => can(p))
   clear(main,
+    el('h3', {}, 'Play access'),
     el('h1', {}, `Hello, ${state.me.name}`),
     el('div', { class: 'tiles' }, tiles.map(([, href, title, sub]) => el('a', { class: 'tile', href }, title, el('span', {}, sub)))))
 }
@@ -348,12 +358,12 @@ async function showInvite(partyId) {
   } catch (err) {
     return showError(err)
   }
-  const canvas = inviteCard(invite)
+  const canvas = await inviteCard(invite)
   const filename = `naru-invite-${invite.party.inviteCode}.png`
   const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
   const file = new File([blob], filename, { type: 'image/png' })
   const url = URL.createObjectURL(blob)
-  const preview = el('img', { src: url, alt: `E-invite for ${invite.party.name}, code ${invite.party.inviteCode}`, style: { width: '100%', borderRadius: '12px', border: '1px solid var(--border)' } })
+  const preview = el('img', { src: url, alt: `E-invite for ${invite.party.name}, code ${invite.party.inviteCode}`, style: { width: '100%', borderRadius: '12px', boxShadow: 'var(--shadow-ambient)' } })
   const canShare = !!navigator.canShare?.({ files: [file] })
   const print = () => {
     const w = window.open('', '_blank')

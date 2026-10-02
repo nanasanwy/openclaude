@@ -79,14 +79,14 @@ async function refresh() {
     if (!groups.has(b.groupId)) groups.set(b.groupId, [])
     groups.get(b.groupId).push(b)
   }
-  clear(bandsBox, groups.size ? [...groups.entries()].map(([gid, bands]) => el('div', { class: 'band-group' },
+  clear(bandsBox, groups.size ? el('div', { class: 'band-groups' }, [...groups.entries()].map(([gid, bands]) => el('div', { class: 'band-group' },
     el('div', { class: 'row small muted' }, el('strong', {}, bands[0].partyName ?? `Group ${gid}`), bands[0].groupType === 'party' ? el('span', { class: 'badge' }, 'party') : null,
-      el('a', { href: `/#/group/${gid}`, target: '_blank' }, 'detail')),
+      el('a', { href: `index.html#/group/${gid}`, target: '_blank' }, 'detail')),
     bands.map(b => el('div', { class: 'band-row' },
       el('span', { class: `badge ${b.type}` }, BAND_LABEL[b.type]), el('span', { class: 'mono' }, b.barcode),
       el('span', { class: `badge ${b.inside ? 'ok' : ''}` }, b.inside ? 'inside' : b.firstInAt ? 'out' : 'not in yet'),
       el('button', { class: 'small', onclick: () => scan('in', b.barcode) }, 'Scan IN'),
-      el('button', { class: 'small', onclick: () => scan('out', b.barcode) }, 'Scan OUT'))))) : el('p', { class: 'empty' }, 'No active bands. Add a family above or activate bands in the staff app.'))
+      el('button', { class: 'small', onclick: () => scan('out', b.barcode) }, 'Scan OUT')))))) : el('p', { class: 'empty' }, 'No active bands. Add a family above or activate bands in the staff app.'))
 }
 
 fireBtn.onclick = async () => {

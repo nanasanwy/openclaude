@@ -1,0 +1,274 @@
+<title>Naru Access Test Drive</title>
+<style>
+  @font-face { font-family: 'Manrope'; src: url('fonts/manrope-latin.woff2') format('woff2'); font-weight: 400 800; font-display: swap; }
+  @font-face { font-family: 'Plus Jakarta Sans'; src: url('fonts/plus-jakarta-sans-latin.woff2') format('woff2'); font-weight: 400 700; font-display: swap; }
+  /* Naru Play Café brand (light only, as the brand defines it).
+     Layout: one screen. Glass header, a strip of test PINs, tabs, then the live screens filling the rest. */
+  :root {
+    --primary: #5a6335; --on-primary: #ffffff; --primary-fixed: #dee8af; --on-primary-fixed: #3c441a;
+    --terracotta: #fd9261; --on-terracotta: #742a00; --coffee: #795649;
+    --surface: #fef9ef; --surface-low: #f8f3e9; --surface-mid: #f2ede3; --surface-high: #ece8de; --card: #ffffff;
+    --ink: #1d1c16; --ink-2: #46483d;
+    --display: 'Manrope', 'Plus Jakarta Sans', system-ui, sans-serif;
+    --body: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    color-scheme: light;
+  }
+  html, body { height: 100%; }
+  body { background: var(--surface-low); color: var(--ink); font: 15px/1.55 var(--body); -webkit-font-smoothing: antialiased; }
+  .app { height: 100%; display: flex; flex-direction: column; }
+  header {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 10px 16px; background: rgba(254, 249, 239, 0.85); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+  }
+  header img { height: 34px; width: auto; display: block; }
+  .titles { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+  .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--coffee); }
+  .titles strong { font: 800 1.15rem/1.2 var(--display); letter-spacing: -0.02em; }
+  .spacer { flex: 1; }
+  .clock { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
+  .clock b { font: 800 1.25rem/1.1 var(--display); font-variant-numeric: tabular-nums; }
+  button {
+    font: 600 0.9rem/1.2 var(--body); cursor: pointer; border: 0; border-radius: 12px; min-height: 40px; padding: 8px 14px;
+    background: var(--surface-high); color: var(--ink); transition: background-color 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  button:hover { background: #e7e2d8; }
+  button:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+  button.armed { background: var(--terracotta); color: var(--on-terracotta); }
+  .pins { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding: 8px 16px; background: var(--surface-mid); font-size: 0.85rem; }
+  .pins .eyebrow { margin-right: 4px; }
+  .pin { display: inline-flex; gap: 6px; align-items: baseline; padding: 3px 12px; border-radius: 9999px; background: var(--card); }
+  .pin b { font-family: var(--mono); letter-spacing: 0.08em; color: var(--primary); }
+  nav { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 16px 8px; align-items: center; }
+  nav [role='tab'] { border-radius: 9999px; background: transparent; color: var(--ink-2); }
+  nav [role='tab'][aria-selected='true'] { background: var(--primary); color: var(--on-primary); }
+  nav .split { margin-left: auto; }
+  nav .split[aria-pressed='true'] { background: var(--primary-fixed); color: var(--on-primary-fixed); }
+  main { flex: 1; min-height: 0; display: grid; gap: 12px; padding: 0 16px 16px; grid-template-columns: 1fr; }
+  main.split { grid-template-columns: 1fr 1fr; }
+  .panel { min-height: 0; min-width: 0; border-radius: 24px; overflow: hidden; background: var(--card); display: flex; }
+  .panel iframe { border: 0; width: 100%; height: 100%; display: block; background: var(--surface-low); }
+  .gates { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; background: var(--surface-low); }
+  .gates figure { margin: 0; display: flex; flex-direction: column; min-height: 0; border-radius: 24px; overflow: hidden; background: var(--card); }
+  .gates figcaption { padding: 8px 14px; font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--coffee); }
+  .gates iframe { flex: 1; }
+  .guide { overflow-y: auto; padding: 24px 24px 40px; background: var(--card); width: 100%; }
+  .guide-inner { max-width: 760px; margin: 0 auto; }
+  .guide h2 { font: 800 1.6rem/1.2 var(--display); letter-spacing: -0.02em; margin: 0 0 8px; text-wrap: balance; }
+  .guide h3 { font: 700 1.1rem/1.3 var(--display); margin: 28px 0 8px; }
+  .guide p, .guide li { color: var(--ink-2); max-width: 68ch; }
+  .guide ol { padding-left: 1.3em; }
+  .guide li { margin: 6px 0; }
+  .guide code, .guide kbd { font-family: var(--mono); background: var(--surface-mid); border-radius: 6px; padding: 1px 6px; color: var(--ink); }
+  .guide .note { background: var(--surface-low); border-radius: 16px; padding: 14px 18px; margin-top: 24px; }
+  .loading { margin: auto; text-align: center; color: var(--ink-2); padding: 40px 16px; }
+  .loading strong { display: block; font: 800 1.3rem/1.3 var(--display); color: var(--ink); margin-bottom: 6px; }
+  .error { color: #93000a; }
+  @media (max-width: 1100px) { nav .split { display: none; } main.split { grid-template-columns: 1fr; } }
+  @media (max-width: 640px) {
+    header { gap: 10px; padding: 8px 12px; flex-wrap: nowrap; }
+    .titles { flex-shrink: 1; }
+    .pins .eyebrow { white-space: nowrap; }
+    header img { height: 26px; }
+    .titles .eyebrow, .clock .eyebrow { display: none; }
+    .titles strong { font-size: 1rem; }
+    .clock b { font-size: 1rem; }
+    header button { min-height: 36px; padding: 6px 10px; font-size: 0.8rem; }
+    /* One scrolling row each, so the screens keep most of the phone. */
+    .pins, nav { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+    .pins { padding: 6px 12px; }
+    .pin { white-space: nowrap; }
+    nav { padding: 8px 12px 6px; }
+    nav [role='tab'] { white-space: nowrap; min-height: 36px; padding: 6px 12px; }
+    .gates { grid-template-columns: 1fr; }
+    .guide { padding: 18px 16px 32px; }
+    main { padding: 0 8px 8px; }
+    .panel, .gates figure { border-radius: 16px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <header>
+    <img src="brand/naru-logo.png" alt="Naru Play Café">
+    <div class="titles"><span class="eyebrow">Play access system</span><strong>Test drive</strong></div>
+    <span class="spacer"></span>
+    <div class="clock" aria-live="off"><span class="eyebrow">Venue time</span><b id="clock">—</b></div>
+    <button id="reset" type="button">Reset test data</button>
+  </header>
+  <div class="pins" aria-label="Test PINs">
+    <span class="eyebrow">Test PINs</span>
+    <span class="pin">Cashier <b>2222</b></span>
+    <span class="pin">Reception <b>3333</b></span>
+    <span class="pin">Supervisor <b>4444</b></span>
+    <span class="pin">Events <b>5555</b></span>
+    <span class="pin">Manager <b>1111</b></span>
+  </div>
+  <nav role="tablist" aria-label="Screens">
+    <button role="tab" id="tab-staff" aria-controls="p-staff" aria-selected="true">Staff tablet</button>
+    <button role="tab" id="tab-sim" aria-controls="p-sim" aria-selected="false">Gate simulator</button>
+    <button role="tab" id="tab-gates" aria-controls="p-gates" aria-selected="false">Gate screens</button>
+    <button role="tab" id="tab-guide" aria-controls="p-guide" aria-selected="false">How to test</button>
+    <button class="split" id="split" type="button" aria-pressed="false">Tablet + simulator side by side</button>
+  </nav>
+  <main id="main">
+    <section class="panel" id="p-staff" role="tabpanel" aria-labelledby="tab-staff">
+      <div class="loading" id="loading"><strong>Starting the access system…</strong>It runs entirely in this page with test data.</div>
+    </section>
+    <section class="panel" id="p-sim" role="tabpanel" aria-labelledby="tab-sim" hidden></section>
+    <section class="panel" id="p-gates" role="tabpanel" aria-labelledby="tab-gates" hidden>
+      <div class="gates">
+        <figure><figcaption>IN gate screen</figcaption></figure>
+        <figure><figcaption>OUT gate screen</figcaption></figure>
+      </div>
+    </section>
+    <section class="panel" id="p-guide" role="tabpanel" aria-labelledby="tab-guide" hidden>
+      <div class="guide"><div class="guide-inner">
+        <span class="eyebrow">How to test</span>
+        <h2>Run a Saturday at the gate in ten minutes</h2>
+        <p>This is the real access software running in this page with test data and a simulated clock. Nothing here touches StoreHub, Umai or real gates. Your test data stays in this browser until you press <em>Reset test data</em>.</p>
+        <p>Use <strong>Tablet + simulator side by side</strong> on a laptop, or switch tabs on a phone. Bands are typed into the scan boxes and Enter pressed, exactly what a USB scanner does.</p>
+
+        <h3>1. A walk-in family arrives</h3>
+        <ol>
+          <li><strong>Staff tablet</strong>: log in as Cashier <code>2222</code> → <em>Activate bands</em>.</li>
+          <li>Enter receipt <code>SH-10442</code>, table <code>12</code> → <em>Start group &amp; scan bands</em>.</li>
+          <li>Scan <code>A-000101</code>, <code>K-000101</code>, <code>K-000102</code>. The prefix tags each band as adult or kid.</li>
+          <li><strong>Gate simulator</strong>: press <em>Scan IN</em> on all three. The 3-hour timer starts at the first scan.</li>
+        </ol>
+
+        <h3>2. The kids exit rule</h3>
+        <ol>
+          <li>Scan <code>K-000101</code> <em>OUT</em> on its own: red, <em>Adult must scan out first</em>.</li>
+          <li>Scan <code>A-000101</code> <em>OUT</em>, then the kid within a minute: both open.</li>
+          <li>Wait more than a minute (or press <em>+5 min</em>) and try the other kid alone: refused again.</li>
+        </ol>
+
+        <h3>3. Overtime and the exit lock</h3>
+        <ol>
+          <li>Scan everyone back <em>IN</em>. Re-entry is allowed and the timer keeps running.</li>
+          <li>Move the clock forward past 3 hours and 15 minutes from entry (<em>+1 hour</em> three times, <em>+15 min</em>, <em>+1 min</em>).</li>
+          <li>Scan the adult <em>OUT</em>: <em>Please see our host</em>.</li>
+          <li>Log in as Supervisor <code>4444</code> → <em>Live dashboard</em>. The group shows the blocks due and the amount in RM. Open it → <em>Overtime paid — clear</em> with any receipt number. Now the family can leave.</li>
+        </ol>
+
+        <h3>4. A birthday party with a QR invite</h3>
+        <ol>
+          <li>Log in as Events <code>5555</code> → <em>Party setup</em>. Create a party; the e-invite with its QR code opens.</li>
+          <li>Log in as Reception <code>3333</code> → <em>Party check-in</em>. Type the 6-letter code (a counter scanner reads the QR into the same box) and scan a few bands such as <code>A-300001</code>, <code>K-300001</code>.</li>
+          <li>Party bands only open the gate during the party time, with no grace period.</li>
+        </ol>
+
+        <h3>5. Packages, safety and reports</h3>
+        <ol>
+          <li>Cashier → <em>Packages</em>: the demo account is on phone <code>0123334444</code> with 12 visits. On <em>Activate bands</em>, use <em>Use visit package…</em> to deduct visits per kid.</li>
+          <li>Simulator → <em>Trigger fire alarm</em>: both gates open and every rule is ignored. Reset it after.</li>
+          <li>Supervisor → <em>Handheld gate scan</em> is the backup when a reader fails; <em>Open once</em> and <em>Hold open</em> are on the dashboard. Every override asks for a reason and is logged with the staff name.</li>
+          <li>Manager <code>1111</code> → <em>Reports</em> for the day's visitors, overtime to match against StoreHub, overrides and package use; <em>Settings</em> for every rule and price.</li>
+        </ol>
+
+        <div class="note">
+          <p><strong>What the test drive can't do.</strong> Downloads (CSV reports, the invite image) and printing are blocked inside this preview page. They work on the venue PC. Real gates, readers and the fire panel connect through the lane controller on site.</p>
+        </div>
+      </div></div>
+    </section>
+  </main>
+</div>
+
+<script src="sql-asm.js"></script>
+<script src="engine.js"></script>
+<script>
+  ;(async function () {
+    var loading = document.getElementById('loading')
+    var demo
+    try {
+      var SQL = await initSqlJs()
+      demo = NaruDemo.startDemo(SQL)
+    } catch (err) {
+      loading.innerHTML = ''
+      var s = document.createElement('strong')
+      s.textContent = 'The test drive could not start.'
+      var p = document.createElement('span')
+      p.className = 'error'
+      p.textContent = String((err && err.message) || err)
+      loading.append(s, p)
+      return
+    }
+
+    var main = document.getElementById('main')
+    var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'))
+    var panels = { staff: 'p-staff', sim: 'p-sim', gates: 'p-gates', guide: 'p-guide' }
+    var split = document.getElementById('split')
+    var current = 'staff'
+
+    function frame(src, title) {
+      var f = document.createElement('iframe')
+      f.src = src
+      f.title = title
+      return f
+    }
+    var staffFrame = frame('staff.html', 'Staff tablet')
+    var simFrame = frame('sim.html', 'Gate simulator')
+    window.naruDemo = {
+      fetch: demo.fetch,
+      connect: demo.connect,
+      navigate: function (href) {
+        if (/^gate\.html/.test(href)) return show('gates')
+        var hash = href.split('#')[1]
+        show('staff')
+        if (hash) staffFrame.contentWindow.location.hash = hash
+      },
+    }
+    document.getElementById('p-staff').replaceChildren(staffFrame)
+    document.getElementById('p-sim').append(simFrame)
+    var figures = document.querySelectorAll('.gates figure')
+    figures[0].append(frame('gate.html#in', 'IN gate screen'))
+    figures[1].append(frame('gate.html#out', 'OUT gate screen'))
+
+    function show(name) {
+      current = name
+      var sideBySide = split.getAttribute('aria-pressed') === 'true' && (name === 'staff' || name === 'sim')
+      main.classList.toggle('split', sideBySide)
+      tabs.forEach(function (t) {
+        var key = t.id.replace('tab-', '')
+        t.setAttribute('aria-selected', String(key === name || (sideBySide && (key === 'staff' || key === 'sim'))))
+      })
+      Object.keys(panels).forEach(function (key) {
+        document.getElementById(panels[key]).hidden = !(key === name || (sideBySide && (key === 'staff' || key === 'sim')))
+      })
+      try { localStorage.setItem('naru-demo-tab', name) } catch (e) {}
+    }
+    tabs.forEach(function (t) { t.addEventListener('click', function () { show(t.id.replace('tab-', '')) }) })
+    split.addEventListener('click', function () {
+      split.setAttribute('aria-pressed', String(split.getAttribute('aria-pressed') !== 'true'))
+      try { localStorage.setItem('naru-demo-split', split.getAttribute('aria-pressed')) } catch (e) {}
+      show(current === 'staff' || current === 'sim' ? current : 'staff')
+    })
+    try {
+      if (localStorage.getItem('naru-demo-split') === 'true' && window.innerWidth > 1100) split.setAttribute('aria-pressed', 'true')
+      var remembered = localStorage.getItem('naru-demo-tab')
+      if (remembered && panels[remembered]) current = remembered
+    } catch (e) {}
+    show(current)
+
+    var clock = document.getElementById('clock')
+    var fmt = new Intl.DateTimeFormat('en-MY', { timeZone: 'Asia/Kuala_Lumpur', weekday: 'short', hour: 'numeric', minute: '2-digit' })
+    function tick() { clock.textContent = fmt.format(demo.nowMs()) }
+    tick()
+    setInterval(tick, 1000)
+
+    var reset = document.getElementById('reset')
+    var armedTimer = null
+    reset.addEventListener('click', function () {
+      if (!reset.classList.contains('armed')) {
+        reset.classList.add('armed')
+        reset.textContent = 'Tap again to wipe test data'
+        armedTimer = setTimeout(function () { reset.classList.remove('armed'); reset.textContent = 'Reset test data' }, 4000)
+        return
+      }
+      clearTimeout(armedTimer)
+      demo.reset()
+      location.reload()
+    })
+  })()
+</script>

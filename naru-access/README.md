@@ -49,6 +49,22 @@ about to run over time, a second family, a birthday party starting soon, and a p
 6. Back in the simulator, scan the adult then the kids *OUT*: green, *"See you again!"*.
 7. Log in as **Manager (1111)** → *Reports* to see the day, and download the CSV files.
 
+## Test drive in a browser (no install)
+
+`bun run demo:build` packs the system into `demo-dist/`, a set of static files that runs the real
+rules engine, database schema and API inside the browser. It uses sql.js in place of the venue PC's
+SQLite and keeps test data in that browser. The page shows the staff tablet, gate simulator and both
+gate screens as tabs, or side by side on a laptop, with a step-by-step test guide and the test PINs.
+`src/demo/` holds the browser adapters; the system code itself is unchanged.
+
+## Brand
+
+The screens use the Naru Play Café design system: sage olive actions, terracotta for kid bands,
+coffee eyebrow labels, and cream and white surfaces layered by tone rather than ruled lines. Type is
+Manrope for headings and Plus Jakarta Sans for body text. The font files are stored in
+`public/fonts/` (SIL Open Font License, see `LICENSE-OFL.txt`) so the screens look right without an
+internet connection. Logos are in `public/brand/`.
+
 ## Run it for real
 
 ```bash
@@ -161,7 +177,7 @@ decoder (jsQR, a test-only dependency).
 ## Tests
 
 ```bash
-bun test ./test        # 52 tests, a few seconds
+bun test ./test        # 55 tests, a few seconds
 bun run typecheck
 ```
 
@@ -192,6 +208,7 @@ src/db/        SQLite schema with append-only triggers
 src/server/    HTTP API + websocket push
 src/lane/      lane controller and relay drivers (runs beside each gate)
 src/qr.ts      QR code encoder for e-invites
+src/demo/      browser test drive: sql.js and crypto adapters, page shell
 public/        staff app, gate display, simulator (plain HTML/JS, no build step)
 test/          acceptance, rules, QR and server tests
 ```

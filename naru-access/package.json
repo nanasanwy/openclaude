@@ -11,7 +11,8 @@
     "backup": "bun run scripts/backup.ts",
     "test": "bun test ./test",
     "typecheck": "tsc --noEmit -p .",
-    "compile": "bun build src/main.ts --compile --outfile dist/naru-access"
+    "compile": "bun build src/main.ts --compile --outfile dist/naru-access",
+    "demo:build": "bun run scripts/build-demo.ts"
   },
   "engines": {
     "bun": ">=1.1.0"
@@ -19,6 +20,7 @@
   "devDependencies": {
     "@types/bun": "^1.4.2",
     "jsqr": "1",
+    "sql.js": "1",
     "typescript": "5"
   }
 }
