@@ -9,7 +9,8 @@ import { join } from 'node:path'
 import { SimClock } from '../src/core/clock.ts'
 import { AccessSystem, type SystemEvent } from '../src/core/system.ts'
 import { openDatabase } from '../src/db/database.ts'
-import { at, setup, walkIn } from './helpers.ts'
+import { encodeQr } from '../src/qr.ts'
+import { at, decodeQr, setup, walkIn } from './helpers.ts'
 
 const FAMILY = ['A-000001', 'A-000002', 'K-000001', 'K-000002', 'K-000003']
 const ADULTS = FAMILY.slice(0, 2)
@@ -159,9 +160,13 @@ describe('Section 9 acceptance tests', () => {
     })
     expect(party.endAt - party.startAt).toBe(180 * 60_000) // default block length setting
     const started = performance.now()
-    // A scanned QR can be the code itself or a link that ends with it.
-    const found = env.system.findPartyByCode(env.staff.receptionist, `https://naru.example/invite/${party.inviteCode.toLowerCase()}`)
+    // Reception scans the QR on the guest's e-invite; the scanner types what the QR holds.
+    const scanned = decodeQr(encodeQr(party.inviteCode, 'Q'))
+    expect(scanned).toBe(party.inviteCode)
+    const found = env.system.findPartyByCode(env.staff.receptionist, scanned!)
     expect(found.id).toBe(party.id)
+    // A typed code or a link ending in the code also works.
+    expect(env.system.findPartyByCode(env.staff.receptionist, `https://naru.example/invite/${party.inviteCode.toLowerCase()}`).id).toBe(party.id)
     for (let i = 1; i <= 30; i++) {
       env.system.addBand(env.staff.receptionist, found.groupId, i <= 12 ? `A-2000${String(i).padStart(2, '0')}` : `K-2000${String(i).padStart(2, '0')}`)
     }

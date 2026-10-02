@@ -1,5 +1,5 @@
 import {
-  api, ask, bandBadge, clear, download, el, fmtDateTime, fmtDuration, fmtTime, liveSocket, phaseBadge, plural, rm,
+  api, ask, bandBadge, clear, download, el, fmtDateTime, inviteCard, fmtDuration, fmtTime, liveSocket, phaseBadge, plural, rm,
   serverNow, session, setTimeContext, showError, toast, todayLocal,
 } from './lib.js'
 
@@ -333,11 +333,51 @@ async function showParty(main, id) {
     el('div', { class: 'grid' },
       el('div', { class: 'card' }, el('div', { class: 'stat-label' }, 'Checked in / expected'), counter),
       el('div', { class: 'card' }, el('div', { class: 'stat-label' }, 'Room & time'), el('div', { class: 'stat', style: { fontSize: '1.4rem' } }, p.room), `${fmtTime(p.startAt)} – ${fmtTime(p.endAt)}`),
-      el('div', { class: 'card' }, el('div', { class: 'stat-label' }, 'Host'), el('strong', {}, p.hostName), el('div', {}, p.hostPhone), el('div', { class: 'mono small muted' }, `Code ${p.inviteCode}`))),
+      el('div', { class: 'card' }, el('div', { class: 'stat-label' }, 'Host'), el('strong', {}, p.hostName), el('div', {}, p.hostPhone), el('div', { class: 'mono small muted' }, `Code ${p.inviteCode}`), el('button', { class: 'small', style: { marginTop: '8px' }, onclick: () => showInvite(p.id) }, 'E-invite & QR'))),
     el('div', { class: 'card', style: { marginTop: '16px' } },
       el('p', { class: 'muted' }, 'Scan one band per guest. Party bands only open the gate during the party time.'),
       bandScanner(p.groupId, { initialBands: group.bands.filter(b => b.status !== 'void'), onAdded: () => { checked++; renderCounter() } })),
     el('div', { class: 'row', style: { marginTop: '16px' } }, el('a', { class: 'btn', href: '#/checkin' }, 'Back to parties')))
+}
+
+/** Shows the e-invite card with download, share and print. */
+async function showInvite(partyId) {
+  let invite
+  try {
+    invite = await api(`/api/parties/${partyId}/invite`)
+  } catch (err) {
+    return showError(err)
+  }
+  const canvas = inviteCard(invite)
+  const filename = `naru-invite-${invite.party.inviteCode}.png`
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
+  const file = new File([blob], filename, { type: 'image/png' })
+  const url = URL.createObjectURL(blob)
+  const preview = el('img', { src: url, alt: `E-invite for ${invite.party.name}, code ${invite.party.inviteCode}`, style: { width: '100%', borderRadius: '12px', border: '1px solid var(--border)' } })
+  const canShare = !!navigator.canShare?.({ files: [file] })
+  const print = () => {
+    const w = window.open('', '_blank')
+    if (!w) return toast('Allow pop-ups to print', 'warn')
+    w.document.title = filename
+    const img = w.document.createElement('img')
+    img.style.cssText = 'width:100%;max-width:540px;display:block;margin:0 auto'
+    img.onload = () => w.print()
+    img.src = canvas.toDataURL('image/png')
+    w.document.body.append(img)
+  }
+  const dialog = el('dialog', { style: { width: 'min(520px, calc(100vw - 32px))' } },
+    el('h2', {}, 'E-invite'),
+    el('p', { class: 'muted small' }, 'Send this image to the host to share with guests. Reception scans the QR, or types the code.'),
+    preview,
+    el('div', { class: 'row', style: { marginTop: '12px' } },
+      canShare ? el('button', { class: 'primary', onclick: () => navigator.share({ files: [file], title: invite.party.name }).catch(() => {}) }, 'Share…') : null,
+      el('a', { class: `btn ${canShare ? '' : 'primary'}`, href: url, download: filename }, 'Download image'),
+      el('button', { onclick: print }, 'Print'),
+      el('span', { class: 'spacer', style: { flex: 1 } }),
+      el('button', { onclick: () => dialog.close() }, 'Close')))
+  dialog.addEventListener('close', () => { URL.revokeObjectURL(url); dialog.remove() })
+  document.body.append(dialog)
+  dialog.showModal()
 }
 
 // ------------------------------------------------------------ party setup (events coordinator)
@@ -371,6 +411,7 @@ async function partySetup(main) {
     clear(list, parties.length ? parties.map(p => el('li', {},
       el('div', { class: 'grow' }, el('strong', {}, p.name), el('div', { class: 'small muted' }, `${p.room} · ${fmtTime(p.startAt)}–${fmtTime(p.endAt)} · host ${p.hostName} ${p.hostPhone}`)),
       el('span', { class: 'mono badge' }, p.inviteCode), el('span', { class: 'badge' }, `${p.checkedIn.total}/${p.expectedGuests}`),
+      el('button', { class: 'small', onclick: () => showInvite(p.id) }, 'Invite'),
       el('a', { class: 'btn small', href: `#/checkin/${p.id}` }, 'Bands'))) : el('li', { class: 'empty' }, 'No parties on this date'))
   }
   listDate.addEventListener('change', () => loadList().catch(showError))
@@ -381,9 +422,10 @@ async function partySetup(main) {
       clear(result, el('div', { class: 'banner ok', style: { marginTop: '12px' } },
         el('div', {}, `Created "${p.name}". E-invite code:`),
         el('div', { class: 'stat mono' }, p.inviteCode),
-        el('div', { class: 'small' }, 'Send this code to the host to share with guests. Reception types or scans it at arrival.')))
+        el('button', { class: 'primary', style: { marginTop: '8px' }, onclick: () => showInvite(p.id) }, 'Show e-invite with QR code')))
       f.name.value = ''
       loadList()
+      showInvite(p.id)
     } catch (err) { showError(err) }
   }
   const field = (label, input) => el('div', { class: 'field' }, el('label', {}, label), input)

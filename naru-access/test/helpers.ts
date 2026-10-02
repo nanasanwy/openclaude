@@ -1,3 +1,4 @@
+import jsQR from 'jsqr'
 import { SimClock } from '../src/core/clock.ts'
 import type { Actor } from '../src/core/system.ts'
 import { AccessSystem } from '../src/core/system.ts'
@@ -50,4 +51,24 @@ export function walkIn(env: Env, barcodes: string[], receiptNo = 'SH-1001', tabl
   const group = env.system.createGroup(env.staff.cashier!, { receiptNo, tableNo })
   for (const code of barcodes) env.system.addBand(env.staff.cashier!, group.id, code)
   return group
+}
+
+/** Renders a QR matrix to pixels (with quiet zone) and reads it back with an independent decoder. */
+export function decodeQr(qr: { size: number; modules: boolean[][] } | { rows: string[] }, scale = 4): string | null {
+  const modules = 'rows' in qr ? qr.rows.map(r => [...r].map(c => c === '1')) : qr.modules
+  const border = 4
+  const dim = (modules.length + border * 2) * scale
+  const pixels = new Uint8ClampedArray(dim * dim * 4).fill(255)
+  modules.forEach((row, y) =>
+    row.forEach((dark, x) => {
+      if (!dark) return
+      for (let dy = 0; dy < scale; dy++) {
+        for (let dx = 0; dx < scale; dx++) {
+          const i = (((y + border) * scale + dy) * dim + (x + border) * scale + dx) * 4
+          pixels[i] = pixels[i + 1] = pixels[i + 2] = 0
+        }
+      }
+    }),
+  )
+  return jsQR(pixels, dim, dim)?.data ?? null
 }

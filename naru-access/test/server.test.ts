@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { LaneController } from '../src/lane/controller.ts'
 import { LogRelay } from '../src/lane/relay.ts'
 import { createServer } from '../src/server/http.ts'
-import { at, setup } from './helpers.ts'
+import { at, decodeQr, setup } from './helpers.ts'
 
 const LANE_KEY = 'test-lane-key'
 let env: ReturnType<typeof setup>
@@ -73,6 +73,20 @@ describe('HTTP API', () => {
     await waitFor(() => display.some(m => m.type === 'gate'))
     expect(display.find(m => m.type === 'gate').decision.barcode).toBe('A-555001')
     ws.close()
+  })
+
+  test('party e-invite returns a scannable QR of the invite code, for party staff only', async () => {
+    const events = (await api('/api/login', { body: { pin: '555555' } })).data.token
+    const party = await api('/api/parties', { token: events, body: {
+      name: 'QR party', room: 'Private Room A', date: '2026-10-03', startTime: '14:00', expectedGuests: 10, hostName: 'Host', hostPhone: '0120000000',
+    } })
+    const reception = (await api('/api/login', { body: { pin: '333333' } })).data.token
+    const invite = await api(`/api/parties/${party.data.id}/invite`, { token: reception })
+    expect(invite.status).toBe(200)
+    expect(invite.data.venueName).toBe('Naru Hartamas')
+    expect(decodeQr(invite.data.qr)).toBe(party.data.inviteCode)
+    const cashier = (await api('/api/login', { body: { pin: '222222' } })).data.token
+    expect((await api(`/api/parties/${party.data.id}/invite`, { token: cashier })).status).toBe(403)
   })
 
   test('static files are served and paths cannot escape the public folder', async () => {

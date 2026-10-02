@@ -72,6 +72,9 @@ export function fmtDateTime(ms) {
   if (ms === null || ms === undefined) return '—'
   return new Intl.DateTimeFormat('en-MY', { timeZone, day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(ms)
 }
+export function fmtDateLong(ms) {
+  return new Intl.DateTimeFormat('en-MY', { timeZone, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(ms)
+}
 export function todayLocal(ms = serverNow()) {
   return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(ms)
 }
@@ -178,4 +181,83 @@ export async function download(path, filename) {
   a.click()
   a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 5000)
+}
+
+/**
+ * Draws a shareable e-invite card (1080 x 1500 px, sized for phones and WhatsApp)
+ * with the party details and a scannable QR code. `qr.rows` is the server's QR matrix.
+ */
+export function inviteCard({ venueName, party, qr }) {
+  const rows = qr.rows
+  const W = 1080
+  const H = 1500
+  const canvas = el('canvas', { width: W, height: H })
+  const ctx = canvas.getContext('2d')
+  const font = (weight, px, family = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif') => `${weight} ${px}px ${family}`
+  const centered = (text, y, f, color = '#16181d') => {
+    ctx.font = f
+    ctx.fillStyle = color
+    ctx.textAlign = 'center'
+    ctx.fillText(text, W / 2, y)
+  }
+  const wrap = (text, f, maxWidth, maxLines) => {
+    ctx.font = f
+    const lines = []
+    let line = ''
+    for (const word of text.split(/\s+/)) {
+      const next = line ? `${line} ${word}` : word
+      if (ctx.measureText(next).width <= maxWidth || !line) line = next
+      else { lines.push(line); line = word }
+    }
+    if (line) lines.push(line)
+    if (lines.length > maxLines) {
+      lines.length = maxLines
+      let last = lines[maxLines - 1]
+      while (last && ctx.measureText(`${last}…`).width > maxWidth) last = last.slice(0, -1)
+      lines[maxLines - 1] = `${last}…`
+    }
+    return lines
+  }
+
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, W, H)
+  ctx.fillStyle = '#2456d6'
+  ctx.fillRect(0, 0, W, 150)
+  centered(venueName, 98, font(800, 56), '#ffffff')
+
+  let y = 250
+  centered("You're invited to", y, font(500, 40), '#5d6470')
+  y += 86
+  for (const line of wrap(party.name, font(800, 66), W - 120, 2)) {
+    centered(line, y, font(800, 66))
+    y += 80
+  }
+  y += 6
+  centered(fmtDateLong(party.startAt), y, font(600, 40))
+  y += 56
+  centered(`${fmtTime(party.startAt)} – ${fmtTime(party.endAt)} · ${party.room}`, y, font(500, 40), '#5d6470')
+
+  // QR with its 4-module quiet zone, scaled to whole pixels so every module stays sharp.
+  const modules = rows.length + 8
+  const scale = Math.floor(620 / modules)
+  const qrPx = modules * scale
+  const qx = Math.round((W - qrPx) / 2)
+  const qy = y + 50
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(qx, qy, qrPx, qrPx)
+  ctx.fillStyle = '#000000'
+  rows.forEach((row, r) => {
+    for (let c = 0; c < row.length; c++) if (row[c] === '1') ctx.fillRect(qx + (c + 4) * scale, qy + (r + 4) * scale, scale, scale)
+  })
+  ctx.strokeStyle = '#d9dde3'
+  ctx.lineWidth = 2
+  ctx.strokeRect(qx - 1, qy - 1, qrPx + 2, qrPx + 2)
+
+  y = qy + qrPx + 70
+  centered('Invite code', y, font(500, 34), '#5d6470')
+  y += 80
+  centered(party.inviteCode.split('').join(' '), y, font(800, 76, 'ui-monospace, Menlo, Consolas, monospace'))
+  y += 80
+  centered('Show this at reception when you arrive', y, font(500, 36), '#5d6470')
+  return canvas
 }

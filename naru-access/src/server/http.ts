@@ -4,6 +4,7 @@ import type { SimClock } from '../core/clock.ts'
 import { permissionsFor, ROLE_LABELS, ROLES } from '../core/permissions.ts'
 import { AccessSystem, AppError, type Actor, type ScanSource } from '../core/system.ts'
 import { MINUTE } from '../core/time.ts'
+import { encodeQr, qrRows } from '../qr.ts'
 
 export interface ServerOptions {
   system: AccessSystem
@@ -135,6 +136,13 @@ export function createServer(opts: ServerOptions): Server<SocketData> {
   route('POST', '/api/parties', ctx => system.createParty(needActor(ctx), ctx.body))
   route('GET', '/api/parties/by-code/:code', ctx => system.findPartyByCode(needActor(ctx), ctx.params.code))
   route('GET', '/api/parties/:id', ctx => system.getParty(needActor(ctx), id(ctx)))
+  route('GET', '/api/parties/:id/invite', ctx => {
+    const party = system.getParty(needActor(ctx), id(ctx))
+    // The QR holds only the invite code, which is what reception's scanner types into the check-in box.
+    // Level Q still scans with 25% of the code damaged (cracked phone screens, creased printouts).
+    const qr = encodeQr(party.inviteCode, 'Q')
+    return { party, venueName: system.settings().venueName, qr: { size: qr.size, rows: qrRows(qr) } }
+  })
   route('PUT', '/api/parties/:id', ctx => system.updateParty(needActor(ctx), id(ctx), ctx.body))
 
   // ------------------------------------------------------------ packages
