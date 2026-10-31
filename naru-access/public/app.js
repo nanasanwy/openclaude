@@ -1,5 +1,5 @@
 import {
-  api, ask, bandBadge, clear, download, el, fmtDateTime, inviteCard, fmtDuration, fmtTime, liveSocket, phaseBadge, plural, rm,
+  api, ask, bandBadge, clear, download, el, fmtDateTime, inviteCard, printWristbands, wristbandSvg, fmtDuration, fmtTime, liveSocket, phaseBadge, plural, rm,
   serverNow, session, setTimeContext, showError, toast, todayLocal,
 } from './lib.js'
 
@@ -31,7 +31,8 @@ async function signedIn(staff, permissions) {
   state.settings = await api('/api/settings')
   state.socketClose?.()
   state.socketClose = liveSocket(`token=${session.token}`, msg => {
-    if (msg.type === 'alert' && can('dashboard.view')) {
+    // On Gate check the supervisor is the one scanning, so the screen already shows the refusal.
+    if (msg.type === 'alert' && can('dashboard.view') && !location.hash.startsWith('#/handheld')) {
       const d = msg.decision
       toast(`Gate ${d.lane.toUpperCase()}: ${d.message} (${d.barcode})`, 'warn', 8000)
       navigator.vibrate?.([200, 100, 200])
@@ -165,12 +166,12 @@ function renderLogin() {
 
 function home(main) {
   const tiles = [
-    ['walkin.activate', '#/activate', 'Activate bands', 'Walk-in families'],
+    ['walkin.activate', '#/activate', printedBands() ? 'Print wristbands' : 'Activate bands', 'Walk-in families'],
     ['party.checkin', '#/checkin', 'Party check-in', 'Find by e-invite code'],
     ['party.manage', '#/parties', 'Party setup', 'Create parties and invite codes'],
     ['package.use', '#/packages', 'Packages', 'Accounts, balances, transfers'],
     ['dashboard.view', '#/dashboard', 'Live dashboard', 'Who is inside, overtime, alerts'],
-    ['gate.override', '#/handheld', 'Handheld gate scan', 'Backup when a reader fails'],
+    ['gate.override', '#/handheld', manualGate() ? 'Gate check' : 'Handheld gate scan', manualGate() ? 'Scan wristbands at the gate' : 'Backup when a reader fails'],
     ['reports.view', '#/reports', 'Reports', 'Daily figures and exports'],
     ['settings.manage', '#/settings', 'Settings', 'Prices, times and rules'],
     ['staff.manage', '#/staff', 'Staff', 'Accounts and PINs'],
@@ -179,6 +180,86 @@ function home(main) {
     el('h3', {}, 'Play access'),
     el('h1', {}, `Hello, ${state.me.name}`),
     el('div', { class: 'tiles' }, tiles.map(([, href, title, sub]) => el('a', { class: 'tile', href }, title, el('span', {}, sub)))))
+}
+
+// ------------------------------------------------------------ QR wristbands
+
+const printedBands = () => state.settings?.wristbands?.source === 'printed'
+const manualGate = () => state.settings?.gateMode === 'manual'
+const bandOpts = () => ({ venueName: state.settings.venueName, widthMm: state.settings.wristbands.widthMm, lengthMm: state.settings.wristbands.lengthMm })
+
+/** A big − n + control for counting people at the counter. */
+function counter(label, onChange) {
+  let value = 0
+  const out = el('span', { class: 'counter-value', 'aria-live': 'polite' }, '0')
+  const set = v => {
+    value = Math.max(0, Math.min(30, v))
+    out.textContent = String(value)
+    onChange?.()
+  }
+  return {
+    get value() { return value },
+    set,
+    node: el('div', { class: 'counter' },
+      el('span', { class: 'counter-label' }, label),
+      el('button', { type: 'button', 'aria-label': `One fewer: ${label}`, onclick: () => set(value - 1) }, '−'),
+      out,
+      el('button', { type: 'button', 'aria-label': `One more: ${label}`, onclick: () => set(value + 1) }, '+')),
+  }
+}
+
+/**
+ * Sends a print result to the printer when the tablet does the printing, and returns
+ * a status line saying what happened. `print` is the server's answer.
+ */
+async function sendPrint(print) {
+  if (print.mode === 'browser') {
+    try {
+      await printWristbands(print.bands, bandOpts())
+    } catch (err) {
+      return el('div', { class: 'banner bad' }, `Could not open the print dialog: ${err.message}`)
+    }
+    return el('div', { class: 'banner ok' }, `${plural(print.bands.length, 'wristband')} sent to the printer. If nothing came out, press Print again.`)
+  }
+  if (print.ok) return el('div', { class: 'banner ok' }, `${plural(print.bands.length, 'wristband')} printed.`)
+  return el('div', { class: 'banner bad' }, print.error ?? 'The wristband printer did not answer.')
+}
+
+/** The printed bands of a sale or party: preview, reprint, replace. */
+function wristbandList(initial, { onCancelAll } = {}) {
+  let bands = [...initial]
+  const status = el('div')
+  const list = el('div', { class: 'band-previews' })
+  const reprint = async codes => {
+    try {
+      const print = await api('/api/wristbands/print', { body: { barcodes: codes } })
+      clear(status, await sendPrint(print))
+    } catch (err) { showError(err) }
+  }
+  const replace = async band => {
+    const r = await ask({ title: `Replace ${band.barcode}?`, message: 'For a lost, torn or wet band. The old band stops working and a new one prints with the same details.', fields: [{ name: 'reason', label: 'Reason', required: true }], confirm: 'Replace & print' })
+    if (!r) return
+    try {
+      const res = await api(`/api/bands/${encodeURIComponent(band.barcode)}/replace`, { body: r })
+      clear(status, await sendPrint(res.print))
+      bands = bands.map(b => (b.barcode === band.barcode ? res.print.bands[0] : b))
+      render()
+    } catch (err) { showError(err) }
+  }
+  const render = () => clear(list, bands.map(b => el('div', { class: 'band-preview' },
+    el('div', { class: 'row' }, bandBadge(b.type), el('span', { class: 'mono grow' }, b.barcode),
+      el('button', { class: 'small', onclick: () => reprint([b.barcode]) }, 'Print again'),
+      el('button', { class: 'small', onclick: () => replace(b) }, 'Replace…')),
+    el('div', { class: 'band-art' }, wristbandSvg(b, { ...bandOpts(), outline: true })))))
+  render()
+  return {
+    status,
+    node: el('div', { class: 'stack' }, status, list,
+      el('div', { class: 'row' },
+        el('button', { onclick: () => reprint(bands.map(b => b.barcode)) }, 'Print all again'),
+        onCancelAll ? el('button', { onclick: () => onCancelAll(bands) }, 'Cancel these bands…') : null)),
+    add(more) { bands = [...bands, ...more]; render() },
+  }
 }
 
 // ------------------------------------------------------------ band activation (cashier)
@@ -268,10 +349,13 @@ async function activate(main) {
   const renderPkg = () => clear(pkgArea, pkg
     ? el('div', { class: 'banner ok' },
         el('div', {}, `Package: ${pkg.name} (${pkg.phone}) — ${pkg.visitsLeft} visits left${pkg.expired ? ' — EXPIRED' : ''}`),
-        el('div', { class: 'row', style: { marginTop: '8px' } }, el('label', { style: { margin: 0 } }, 'Kids on this visit'), el('div', { style: { width: '120px' } }, kids),
+        el('div', { class: 'row', style: { marginTop: '8px' } },
+          printedBands() ? el('span', { class: 'small grow' }, 'One visit is used per kid.') : [el('label', { style: { margin: 0 } }, 'Kids on this visit'), el('div', { style: { width: '120px' } }, kids)],
           el('button', { class: 'small', onclick: () => { pkg = null; renderPkg() } }, 'Remove')))
     : el('button', { onclick: choosePackage }, 'Use visit package…'))
   renderPkg()
+
+  if (printedBands()) return printSale(main, { receipt, table, pkgArea, getPkg: () => pkg, setKids: n => (kids.value = String(n)) })
 
   const start = async () => {
     try {
@@ -305,6 +389,62 @@ async function activate(main) {
       el('div', { class: 'field' }, el('label', {}, 'Table number'), table),
       el('div', { class: 'field' }, pkgArea),
       el('button', { class: 'primary', onclick: start, style: { width: '100%' } }, 'Start group & scan bands')))
+  receipt.focus()
+}
+
+/** Walk-in sale with printed QR wristbands: one form, one tap. */
+function printSale(main, { receipt, table, pkgArea, getPkg, setKids }) {
+  const button = el('button', { class: 'primary', style: { width: '100%' } }, 'Print wristbands')
+  const update = () => {
+    const n = adults.value + kids.value + under2.value
+    button.textContent = n ? `Print ${plural(n, 'wristband')}` : 'Add people to print wristbands'
+    button.disabled = n === 0
+    setKids(Math.max(1, kids.value))
+  }
+  const adults = counter('Adults', update)
+  const kids = counter('Kids (play pass)', update)
+  const under2 = counter('Under 2', update)
+  update()
+  button.onclick = async () => {
+    button.disabled = true
+    try {
+      const pkg = getPkg()
+      const body = { receiptNo: receipt.value, tableNo: table.value, wristbands: { adults: adults.value, kids: kids.value, under2: under2.value } }
+      if (pkg) Object.assign(body, { packageAccountId: pkg.id, packageKids: kids.value })
+      const group = await api('/api/groups', { body })
+      if (pkg) toast(`${plural(kids.value, 'visit')} deducted from ${pkg.name}'s package`, 'ok')
+      const bands = wristbandList(group.print.bands, {
+        onCancelAll: async list => {
+          const r = await ask({ title: 'Cancel these bands?', message: 'Use this if the sale did not go ahead. The bands stop working and free up their space.', fields: [{ name: 'reason', label: 'Reason', required: true, value: 'Sale cancelled' }], confirm: 'Cancel bands', danger: true })
+          if (!r) return
+          for (const b of list) await api(`/api/bands/${encodeURIComponent(b.barcode)}/void`, { body: r }).catch(() => {})
+          toast('Bands cancelled')
+          route()
+        },
+      })
+      clear(bands.status, await sendPrint(group.print))
+      clear(main,
+        el('h3', {}, `Group ${group.id}`),
+        el('h1', {}, plural(group.bands.length, 'wristband')),
+        el('p', { class: 'muted' }, `Receipt ${group.receiptNo ?? '—'} · Table ${group.tableNo ?? '—'}. Put a band on every person, including under-2s. Their 3 hours start at their first scan in.`),
+        el('div', { class: 'card' }, bands.node),
+        el('div', { class: 'row', style: { marginTop: '16px' } },
+          el('button', { class: 'primary', onclick: () => route() }, 'Done — next sale'),
+          can('group.view') ? el('a', { class: 'btn', href: `#/group/${group.id}` }, 'Group detail') : null))
+    } catch (err) {
+      showError(err)
+      update()
+    }
+  }
+  clear(main,
+    el('h1', {}, 'Print wristbands'),
+    el('div', { class: 'card', style: { maxWidth: '640px' } },
+      el('p', { class: 'muted' }, 'Take payment in StoreHub first, then print the bands here.'),
+      el('div', { class: 'field' }, el('label', {}, 'StoreHub receipt number'), receipt),
+      el('div', { class: 'field' }, el('label', {}, 'Table number'), table),
+      el('div', { class: 'counters' }, adults.node, kids.node, under2.node),
+      el('div', { class: 'field' }, pkgArea),
+      button))
   receipt.focus()
 }
 
@@ -344,7 +484,7 @@ async function showParty(main, id) {
       el('div', { class: 'card' }, el('div', { class: 'stat-label' }, 'Checked in / expected'), counter),
       el('div', { class: 'card' }, el('div', { class: 'stat-label' }, 'Room & time'), el('div', { class: 'stat', style: { fontSize: '1.4rem' } }, p.room), `${fmtTime(p.startAt)} – ${fmtTime(p.endAt)}`),
       el('div', { class: 'card' }, el('div', { class: 'stat-label' }, 'Host'), el('strong', {}, p.hostName), el('div', {}, p.hostPhone), el('div', { class: 'mono small muted' }, `Code ${p.inviteCode}`), el('button', { class: 'small', style: { marginTop: '8px' }, onclick: () => showInvite(p.id) }, 'E-invite & QR'))),
-    el('div', { class: 'card', style: { marginTop: '16px' } },
+    printedBands() ? partyPrinter(p, group, n => { checked += n; renderCounter() }) : el('div', { class: 'card', style: { marginTop: '16px' } },
       el('p', { class: 'muted' }, 'Scan one band per guest. Party bands only open the gate during the party time.'),
       bandScanner(p.groupId, { initialBands: group.bands.filter(b => b.status !== 'void'), onAdded: () => { checked++; renderCounter() } })),
     el('div', { class: 'row', style: { marginTop: '16px' } }, el('a', { class: 'btn', href: '#/checkin' }, 'Back to parties')))
@@ -388,6 +528,47 @@ async function showInvite(partyId) {
   dialog.addEventListener('close', () => { URL.revokeObjectURL(url); dialog.remove() })
   document.body.append(dialog)
   dialog.showModal()
+}
+
+/** Reception prints party bands as guests arrive, a family at a time. */
+function partyPrinter(p, group, onPrinted) {
+  const button = el('button', { class: 'primary' }, 'Print')
+  const update = () => {
+    const n = adults.value + kids.value + under2.value
+    button.textContent = n ? `Print ${plural(n, 'wristband')}` : 'Choose guests'
+    button.disabled = n === 0
+  }
+  const adults = counter('Adults', update)
+  const kids = counter('Kids', update)
+  const under2 = counter('Under 2', update)
+  update()
+  const printed = el('div')
+  let list = null
+  button.onclick = async () => {
+    button.disabled = true
+    try {
+      const res = await api(`/api/groups/${p.groupId}/wristbands`, { body: { adults: adults.value, kids: kids.value, under2: under2.value } })
+      onPrinted(res.bands.length)
+      if (!list) {
+        list = wristbandList(res.print.bands)
+        clear(printed, list.node)
+      } else list.add(res.print.bands)
+      clear(list.status, await sendPrint(res.print))
+      adults.set(0); kids.set(0); under2.set(0)
+    } catch (err) {
+      showError(err)
+      update()
+    }
+  }
+  const earlier = group.bands.filter(b => b.status === 'active')
+  return el('div', { class: 'stack', style: { marginTop: '16px' } },
+    el('div', { class: 'card stack' },
+      el('p', { class: 'muted', style: { margin: 0 } }, 'Count the guests arriving together and print their bands. Party bands only open the gate during the party time.'),
+      el('div', { class: 'counters' }, adults.node, kids.node, under2.node),
+      button),
+    el('div', { class: 'card' }, el('h3', {}, 'Printed now'), printed),
+    earlier.length ? el('div', { class: 'card' }, el('h3', {}, `Already issued (${earlier.length})`), el('ul', { class: 'list' }, earlier.map(b =>
+      el('li', {}, bandBadge(b.type), el('span', { class: 'mono grow' }, b.barcode), el('span', { class: `badge ${b.inside ? 'ok' : ''}` }, b.inside ? 'Inside' : b.firstInAt ? 'Out' : 'Not in yet'))))) : null)
 }
 
 // ------------------------------------------------------------ party setup (events coordinator)
@@ -542,6 +723,8 @@ async function groupDetail(main, id) {
       el('div', { class: 'card' }, el('h3', {}, 'Bands'), el('ul', { class: 'list' }, g.bands.map(b => el('li', {},
         bandBadge(b.type), el('span', { class: 'mono grow' }, b.barcode),
         el('span', { class: `badge ${b.inside ? 'ok' : ''}` }, b.status !== 'active' ? b.status : b.inside ? 'Inside' : b.firstInAt ? 'Out' : 'Not in yet'),
+        b.status === 'active' && (can('walkin.activate') || can('party.checkin') || override) ? el('button', { class: 'small', onclick: () => reprintBand(b) }, 'Print again') : null,
+        b.status === 'active' && (can('walkin.activate') || can('party.checkin') || override) ? el('button', { class: 'small', onclick: () => replaceBand(b) }, 'Replace…') : null,
         override ? el('button', { class: 'small', onclick: () => release(b) }, 'Let through…') : null)))),
       el('div', { class: 'card' }, el('h3', {}, 'Scan history'), el('div', { class: 'table-wrap' }, el('table', {},
         el('thead', {}, el('tr', {}, el('th', {}, 'Time'), el('th', {}, 'Lane'), el('th', {}, 'Band'), el('th', {}, 'Result'))),
@@ -572,6 +755,18 @@ async function groupDetail(main, id) {
     const r = await ask({ title: 'Close this group?', message: 'All its bands stop working. Anyone still inside can still leave.', fields: [{ name: 'reason', label: 'Reason', required: true }], confirm: 'Close group', danger: true })
     if (r) await api(`/api/groups/${id}/close`, { body: r })
   })
+  const reprintBand = act(async b => {
+    const print = await api('/api/wristbands/print', { body: { barcodes: [b.barcode] } })
+    const status = await sendPrint(print)
+    toast(status.textContent, print.ok ? 'ok' : 'bad')
+  })
+  const replaceBand = act(async b => {
+    const r = await ask({ title: `Replace ${b.barcode}?`, message: 'For a lost, torn or wet band. The old band stops working and a new one prints.', fields: [{ name: 'reason', label: 'Reason', required: true }], confirm: 'Replace & print' })
+    if (!r) return
+    const res = await api(`/api/bands/${encodeURIComponent(b.barcode)}/replace`, { body: r })
+    const status = await sendPrint(res.print)
+    toast(`New band ${res.barcode}. ${status.textContent}`, res.print.ok ? 'ok' : 'bad')
+  })
   const release = act(async b => {
     const r = await ask({ title: `Let ${b.barcode} through`, fields: [
       { name: 'lane', label: 'Gate', options: [{ value: 'out', label: 'OUT' }, { value: 'in', label: 'IN' }], value: b.inside ? 'out' : 'in' },
@@ -584,29 +779,88 @@ async function groupDetail(main, id) {
 
 // ------------------------------------------------------------ handheld backup scanner
 
+/** What the person at the gate should do for each answer. */
+const STAFF_ACTION = {
+  ok_in: 'Let them in',
+  ok_out: 'Let them out',
+  closed_exit: 'Let them out',
+  fire: 'Emergency: let everyone out',
+  manual: 'Opened by staff',
+  not_active: 'Stop. This band is not active. Send them to the cashier.',
+  already_inside: 'Stop. This band is already inside. Check it is not being shared.',
+  see_host: 'Stop. Play time is over and overtime is due. Take them to the host.',
+  adult_first: 'Stop. An adult from the same group must scan out first.',
+  party_not_started: 'Stop. Their party has not started yet.',
+  party_ended: 'Stop. Their party has ended.',
+  play_ended: 'Stop. Their play time has ended.',
+}
+
+let audio = null
+/** A short high beep for yes, a low double buzz for no, so staff can keep their eyes on the guests. */
+function beep(ok) {
+  try {
+    audio ??= new AudioContext()
+    const tones = ok ? [[1320, 0, 0.12]] : [[220, 0, 0.18], [220, 0.25, 0.18]]
+    for (const [freq, at, dur] of tones) {
+      const o = audio.createOscillator()
+      const g = audio.createGain()
+      o.frequency.value = freq
+      o.type = ok ? 'sine' : 'square'
+      g.gain.value = 0.15
+      o.connect(g).connect(audio.destination)
+      o.start(audio.currentTime + at)
+      o.stop(audio.currentTime + at + dur)
+    }
+  } catch {}
+}
+
+/** Staff scan wristbands at the gate (manual gate), or stand in for a broken reader (automatic gate). */
 function handheld(main) {
-  let lane = 'out'
-  const laneBtns = ['in', 'out'].map(l => el('button', { class: 'toggle grow', 'aria-pressed': String(l === lane), onclick: () => {
+  const manual = manualGate()
+  let lane = 'in'
+  const laneBtns = ['in', 'out'].map(l => el('button', { class: 'toggle grow lane-toggle', 'aria-pressed': String(l === lane), onclick: () => {
     lane = l
     laneBtns.forEach((b, i) => b.setAttribute('aria-pressed', String(['in', 'out'][i] === lane)))
     input.focus()
-  } }, `${l.toUpperCase()} gate`))
-  const input = el('input', { class: 'scan', placeholder: 'Scan band…', autocomplete: 'off' })
-  const result = el('div')
+  } }, l === 'in' ? 'Coming IN' : 'Going OUT'))
+  const input = el('input', { class: 'scan', placeholder: 'Scan wristband…', autocomplete: 'off', autocapitalize: 'characters', enterkeyhint: 'go' })
+  const result = el('div', { 'aria-live': 'assertive' })
+  const recent = el('ul', { class: 'list' })
   input.addEventListener('keydown', async e => {
     if (e.key !== 'Enter' || !input.value.trim()) return
     const barcode = input.value.trim()
     input.value = ''
     try {
       const d = await api(`/api/lanes/${lane}/scan`, { body: { barcode, source: 'handheld' } })
-      clear(result, el('div', { class: `decision ${d.color}` }, d.message, el('div', { class: 'small mono' }, `${d.barcode} · ${lane.toUpperCase()}`)))
+      beep(d.open)
       if (!d.open) navigator.vibrate?.([200, 100, 200])
+      const detail = el('div', { class: 'small' })
+      clear(result, el('div', { class: `decision ${d.color}` },
+        el('div', { class: 'decision-head' }, d.open ? (lane === 'in' ? 'LET IN' : 'LET OUT') : 'STOP'),
+        el('div', { class: 'decision-msg' }, STAFF_ACTION[d.code] ?? d.message),
+        el('div', { class: 'small mono' }, `${d.barcode} · ${d.bandType ? d.bandType.replace('under2', 'under 2') : 'unknown band'}`),
+        detail,
+        d.groupId && !d.open && can('group.view') ? el('a', { class: 'btn small', href: `#/group/${d.groupId}`, style: { marginTop: '10px' } }, 'Open the group') : null))
+      recent.prepend(el('li', {}, el('span', { class: 'small muted' }, fmtTime(d.at)), el('span', { class: 'badge' }, lane.toUpperCase()),
+        el('span', { class: 'mono grow' }, d.barcode), el('span', { class: `badge ${d.open ? 'ok' : 'bad'}` }, d.open ? 'OK' : d.message)))
+      while (recent.children.length > 8) recent.lastChild.remove()
+      if (d.groupId && can('group.view')) {
+        api(`/api/groups/${d.groupId}`).then(g => {
+          const who = g.partyName ?? (g.tableNo ? `Table ${g.tableNo}` : `Group ${g.id}`)
+          detail.textContent = `${who} · ${g.counts.inside} of ${g.counts.total} inside${g.effectiveEnd ? ` · play ends ${fmtTime(g.effectiveEnd)}` : ''}`
+        }).catch(() => {})
+      }
     } catch (err) { showError(err) }
+    input.focus()
   })
-  clear(main, el('h1', {}, 'Handheld gate scan'),
-    el('p', { class: 'muted' }, 'Use when a gate reader fails. The same rules apply and the gate opens automatically when allowed.'),
+  clear(main,
+    el('h1', {}, manual ? 'Gate check' : 'Handheld gate scan'),
+    el('p', { class: 'muted' }, manual
+      ? 'Scan every wristband as guests come in or go out. Let them through only when the screen says LET IN or LET OUT. Their 3 hours start at their first scan in.'
+      : 'Use when a gate reader fails. The same rules apply and the gate opens automatically when allowed.'),
     el('div', { class: 'card stack' }, el('div', { class: 'row' }, laneBtns), input, result,
-      el('button', { onclick: () => laneOpen(lane) }, 'Open this gate once (no band)…')))
+      manual ? null : el('button', { onclick: () => laneOpen(lane) }, 'Open this gate once (no band)…')),
+    el('div', { class: 'card', style: { marginTop: '16px' } }, el('h3', {}, 'Recent scans'), recent))
   input.focus()
 }
 
@@ -717,6 +971,16 @@ const SETTINGS_FORM = [
     ['packageWeekdayOnly', 'Weekdays only', 'checkbox'],
     ['packageTransferFee', 'Transfer fee (RM)', 'number'],
   ]],
+  ['Wristbands & gate', [
+    ['gateMode', 'How the gate works', 'select', [['manual', 'Staff check bands'], ['automatic', 'Automatic gates']]],
+    ['wristbands.source', 'Wristbands', 'select', [['printed', 'Print QR bands per sale'], ['preprinted', 'Pre-printed rolls']]],
+    ['wristbands.printer', 'Wristband printer', 'select', [['browser', 'Tablet print dialog'], ['zebra', 'Zebra on the network']]],
+    ['wristbands.printerAddress', 'Zebra printer address (e.g. 192.168.1.50)', 'text'],
+    ['wristbands.printerPort', 'Zebra printer port', 'number'],
+    ['wristbands.printerDpi', 'Printer resolution', 'select-number', [[203, '203 dpi'], [300, '300 dpi'], [600, '600 dpi']]],
+    ['wristbands.widthMm', 'Band width (mm)', 'number'],
+    ['wristbands.lengthMm', 'Band length (mm)', 'number'],
+  ]],
   ['Venue', [
     ['venueName', 'Venue name', 'text'],
     ['openingHours.weekday.open', 'Weekday opening', 'time'],
@@ -732,10 +996,11 @@ async function settingsScreen(main) {
   const s = await api('/api/settings')
   const get = path => path.split('.').reduce((o, k) => o?.[k], s)
   const inputs = []
-  const sections = SETTINGS_FORM.map(([title, fields]) => el('div', { class: 'card' }, el('h2', {}, title), fields.map(([path, label, type]) => {
+  const sections = SETTINGS_FORM.map(([title, fields]) => el('div', { class: 'card' }, el('h2', {}, title), fields.map(([path, label, type, options]) => {
     const v = get(path)
     let input
-    if (type === 'checkbox') input = el('input', { type: 'checkbox', checked: v })
+    if (type === 'select' || type === 'select-number') input = el('select', {}, options.map(([value, text]) => el('option', { value: String(value), selected: value === v }, text)))
+    else if (type === 'checkbox') input = el('input', { type: 'checkbox', checked: v })
     else if (type === 'list') input = el('textarea', { rows: 3 }, (v ?? []).join('\n'))
     else input = el('input', { type: type.replace('?', ''), value: v ?? '', step: 'any' })
     inputs.push({ path, type, input })
@@ -747,7 +1012,7 @@ async function settingsScreen(main) {
       let value
       if (type === 'checkbox') value = input.checked
       else if (type === 'list') value = input.value.split('\n').map(x => x.trim()).filter(Boolean)
-      else if (type === 'number') value = Number(input.value)
+      else if (type === 'number' || type === 'select-number') value = Number(input.value)
       else if (type === 'number?') value = input.value === '' ? null : Number(input.value)
       else value = input.value
       const keys = path.split('.')
@@ -760,6 +1025,16 @@ async function settingsScreen(main) {
       toast('Settings saved', 'ok')
     } catch (err) { showError(err) }
   }
+  const testPrint = async () => {
+    try {
+      const print = await api('/api/wristbands/test', { body: {} })
+      const status = await sendPrint(print)
+      toast(status.textContent, print.ok ? 'ok' : 'bad', 8000)
+    } catch (err) { showError(err) }
+  }
+  sections.find(sec => sec.textContent.startsWith('Wristbands & gate'))?.append(
+    el('p', { class: 'small muted' }, 'Save first, then print a test band. It shows the real layout but never opens the gate.'),
+    el('button', { onclick: testPrint }, 'Print a test band'))
   clear(main, el('div', { class: 'row' }, el('h1', { class: 'grow', style: { margin: 0 } }, 'Settings'), el('button', { class: 'primary', onclick: save }, 'Save all')),
     el('p', { class: 'muted' }, 'Every change is recorded in the audit log with your name.'),
     el('div', { class: 'grid' }, sections),

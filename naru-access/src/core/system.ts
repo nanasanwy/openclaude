@@ -37,6 +37,7 @@ export interface Actor {
 }
 
 export type ScanSource = 'reader' | 'handheld' | 'override' | 'sim'
+export type BandCounts = { adults?: unknown; kids?: unknown; under2?: unknown }
 export type LaneMode = 'normal' | 'held_open'
 
 export interface Decision {
@@ -480,8 +481,16 @@ export class AccessSystem {
 
   // ---------------------------------------------------------------- walk-in groups & bands
 
-  createGroup(actor: Actor, input: { receiptNo?: unknown; tableNo?: unknown; packageAccountId?: unknown; packageKids?: unknown }) {
+  /**
+   * Starts a walk-in group. With `wristbands` counts it also issues the QR bands in the same step,
+   * so a full paid zone refuses the whole sale before any package visit is deducted.
+   */
+  createGroup(
+    actor: Actor,
+    input: { receiptNo?: unknown; tableNo?: unknown; packageAccountId?: unknown; packageKids?: unknown; wristbands?: BandCounts },
+  ): ReturnType<AccessSystem['groupSummary']> & { bands: { barcode: string; type: BandType }[] } {
     this.require(actor, 'walkin.activate')
+    const counts = input.wristbands ? this.bandCounts(input.wristbands) : null
     const tableNo = text(input.tableNo, 'Table number', { required: false, max: 20 }) || null
     const usePackage = input.packageAccountId !== undefined && input.packageAccountId !== null && input.packageAccountId !== ''
     let receiptNo = text(input.receiptNo, 'StoreHub receipt number', { required: !usePackage, max: 40 }) || null
@@ -500,7 +509,8 @@ export class AccessSystem {
         this.db.query('UPDATE visit_groups SET package_account_id = ?, receipt_no = ? WHERE id = ?').run(accountId, receiptNo, id)
       }
       this.audit(actor.id, 'group.create', { groupId: id, receiptNo, tableNo, packageAccountId: usePackage ? input.packageAccountId : null })
-      return this.groupSummary(this.getGroup(id))
+      const bands = counts ? this.issueInTx(actor, id, counts) : []
+      return { ...this.groupSummary(this.getGroup(id)), bands }
     })
     this.emit({ type: 'changed' })
     return group
@@ -523,14 +533,109 @@ export class AccessSystem {
       if (this.getBand(barcode)) throw new AppError(409, 'band_used', `Band ${barcode} has already been used`)
       const cap = this.capacity()
       if (cap.full) throw new AppError(409, 'capacity_full', `Paid zone is full (${cap.occupancy}/${cap.capacity}). No new bands can be activated.`)
-      this.db
-        .query('INSERT INTO bands (barcode, type, status, group_id, inside, activated_by, activated_at) VALUES (?, ?, ?, ?, 0, ?, ?)')
-        .run(barcode, type, 'active', groupId, actor.id, this.clock.now())
-      this.audit(actor.id, 'band.activate', { barcode, type, groupId })
+      this.insertBand(actor, barcode, type, groupId, 'band.activate')
       return { band: this.bandView(this.getBand(barcode)!), capacity: this.capacity() }
     })
     this.emit({ type: 'changed' })
     return result
+  }
+
+  private insertBand(actor: Actor, barcode: string, type: BandType, groupId: number, action: string): void {
+    this.db
+      .query('INSERT INTO bands (barcode, type, status, group_id, inside, activated_by, activated_at) VALUES (?, ?, ?, ?, 0, ?, ?)')
+      .run(barcode, type, 'active', groupId, actor.id, this.clock.now())
+    this.audit(actor.id, action, { barcode, type, groupId })
+  }
+
+  /** A new random band code, e.g. K-7F3K9Q2M. Random rather than sequential so nobody can guess another guest's band. */
+  private newBandCode(type: BandType): string {
+    const prefix = this.cachedSettings.bandPrefixes[type]
+    for (;;) {
+      let code = prefix
+      for (let i = 0; i < 8; i++) code += INVITE_ALPHABET[randomInt(INVITE_ALPHABET.length)]
+      if (!this.getBand(code)) return code
+    }
+  }
+
+  /**
+   * Creates the QR wristbands for a sale (printed bands instead of pre-printed rolls).
+   * Checks capacity for the whole group first, so a family is never half-issued.
+   */
+  issueBands(actor: Actor, groupId: number, counts: BandCounts) {
+    const n = this.bandCounts(counts)
+    const result = this.tx(() => {
+      const group = this.getGroup(groupId)
+      this.require(actor, group.type === 'party' ? 'party.checkin' : 'walkin.activate')
+      return { bands: this.issueInTx(actor, groupId, n), capacity: this.capacity() }
+    })
+    this.emit({ type: 'changed' })
+    return result
+  }
+
+  private bandCounts(counts: BandCounts): Record<BandType, number> {
+    const n: Record<BandType, number> = {
+      adult: wholeNumber(counts.adults ?? 0, 'Adults', 0, 30),
+      kid: wholeNumber(counts.kids ?? 0, 'Kids', 0, 30),
+      under2: wholeNumber(counts.under2 ?? 0, 'Under-2s', 0, 30),
+    }
+    if (n.adult + n.kid + n.under2 === 0) throw new AppError(400, 'no_bands', 'Choose how many adults, kids and under-2s')
+    return n
+  }
+
+  private issueInTx(actor: Actor, groupId: number, n: Record<BandType, number>): { barcode: string; type: BandType }[] {
+    const group = this.getGroup(groupId)
+    if (group.status !== 'active') throw new AppError(409, 'group_closed', 'This group is closed')
+    const total = n.adult + n.kid + n.under2
+    const cap = this.capacity()
+    if (cap.occupancy + total > cap.capacity) {
+      const left = Math.max(0, cap.capacity - cap.occupancy)
+      throw new AppError(409, 'capacity_full', `Only ${left} space${left === 1 ? '' : 's'} left in the paid zone; this group needs ${total}.`)
+    }
+    const bands: { barcode: string; type: BandType }[] = []
+    for (const type of ['adult', 'kid', 'under2'] as BandType[]) {
+      for (let i = 0; i < n[type]; i++) {
+        const barcode = this.newBandCode(type)
+        this.insertBand(actor, barcode, type, groupId, 'band.issue')
+        bands.push({ barcode, type })
+      }
+    }
+    return bands
+  }
+
+  /** Swaps a lost or damaged band for a new one with the same type, group and inside/outside state. */
+  replaceBand(actor: Actor, rawBarcode: unknown, reason: unknown) {
+    this.require(actor, 'walkin.activate', 'party.checkin', 'group.override')
+    const why = reasonText(reason)
+    const old = normalizeBarcode(text(rawBarcode, 'Band barcode'))
+    const result = this.tx(() => {
+      const band = this.getBand(old)
+      if (!band) throw new AppError(404, 'not_found', `Band ${old} not found`)
+      if (band.status !== 'active') throw new AppError(409, 'band_inactive', 'Only an active band can be replaced')
+      const barcode = this.newBandCode(band.type)
+      this.insertBand(actor, barcode, band.type, band.group_id, 'band.issue')
+      this.db
+        .query('UPDATE bands SET inside = ?, first_in_at = ?, last_scan_at = ? WHERE barcode = ?')
+        .run(band.inside, band.first_in_at, band.last_scan_at, barcode)
+      this.db.query(`UPDATE bands SET status = 'void', inside = 0 WHERE barcode = ?`).run(old)
+      this.override(actor, 'replace_band', why, { groupId: band.group_id, barcode: old, details: { newBarcode: barcode } })
+      return { old, barcode, type: band.type, groupId: band.group_id }
+    })
+    this.emit({ type: 'changed' })
+    return result
+  }
+
+  /** What to print on each wristband. */
+  wristbandInfo(actor: Actor, barcodes: string[]) {
+    this.require(actor, 'walkin.activate', 'party.checkin', 'group.override')
+    const date = new Intl.DateTimeFormat('en-MY', { timeZone: this.cachedSettings.timeZone, weekday: 'short', day: 'numeric', month: 'short' }).format(this.clock.now())
+    return barcodes.map(raw => {
+      const band = this.getBand(normalizeBarcode(String(raw)))
+      if (!band) throw new AppError(404, 'not_found', `Band ${raw} not found`)
+      const group = this.getGroup(band.group_id)
+      const party = group.party_id ? this.getPartyRow(group.party_id) : null
+      const groupLabel = party ? party.name : group.table_no ? `Table ${group.table_no}` : `Group ${group.id}`
+      return { barcode: band.barcode, type: band.type, groupLabel, dateLabel: date }
+    })
   }
 
   voidBand(actor: Actor, rawBarcode: unknown, reason: unknown) {

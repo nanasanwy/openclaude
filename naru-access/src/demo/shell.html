@@ -129,19 +129,18 @@
         <p>This is the real access software running in this page with test data and a simulated clock. Nothing here touches StoreHub, Umai or real gates. Your test data stays in this browser until you press <em>Reset test data</em>.</p>
         <p>Use <strong>Tablet + simulator side by side</strong> on a laptop, or switch tabs on a phone. Bands are typed into the scan boxes and Enter pressed, exactly what a USB scanner does.</p>
 
-        <h3>1. A walk-in family arrives</h3>
+        <h3>1. A walk-in family arrives: print their QR wristbands</h3>
         <ol>
-          <li><strong>Staff tablet</strong>: log in as Cashier <code>2222</code> → <em>Activate bands</em>.</li>
-          <li>Enter receipt <code>SH-10442</code>, table <code>12</code> → <em>Start group &amp; scan bands</em>.</li>
-          <li>Scan <code>A-000101</code>, <code>K-000101</code>, <code>K-000102</code>. The prefix tags each band as adult or kid.</li>
-          <li><strong>Gate simulator</strong>: press <em>Scan IN</em> on all three. The 3-hour timer starts at the first scan.</li>
+          <li><strong>Staff tablet</strong>: log in as Cashier <code>2222</code> → <em>Print wristbands</em>.</li>
+          <li>Enter receipt <code>SH-10442</code> and table <code>12</code>, tap <em>+</em> for 1 adult and 2 kids, then <em>Print 3 wristbands</em>. Each band gets its own random code and QR. You see exactly what prints; at the venue the printer runs at this point.</li>
+          <li><strong>Gate simulator</strong>: the new bands appear under <em>Bands</em>. Press <em>Scan IN</em> on all three. The 3-hour timer starts at the first scan.</li>
         </ol>
 
-        <h3>2. The kids exit rule</h3>
+        <h3>2. Staff checking bands at the gate</h3>
         <ol>
-          <li>Scan <code>K-000101</code> <em>OUT</em> on its own: red, <em>Adult must scan out first</em>.</li>
-          <li>Scan <code>A-000101</code> <em>OUT</em>, then the kid within a minute: both open.</li>
-          <li>Wait more than a minute (or press <em>+5 min</em>) and try the other kid alone: refused again.</li>
+          <li>Log in as Supervisor <code>4444</code> → <em>Gate check</em>. This is the screen for the person at the gate while the turnstiles are not connected. A Bluetooth scanner types the QR into the box; here, copy a band code from the simulator and press Enter.</li>
+          <li>Choose <em>Going OUT</em> and scan a kid's band alone: <strong>STOP</strong>, <em>An adult from the same group must scan out first</em>.</li>
+          <li>Scan the adult, then the kid within a minute: both <strong>LET OUT</strong>. Wait more than a minute (or press <em>+5 min</em>) and try the other kid alone: refused again.</li>
         </ol>
 
         <h3>3. Overtime and the exit lock</h3>
@@ -155,7 +154,7 @@
         <h3>4. A birthday party with a QR invite</h3>
         <ol>
           <li>Log in as Events <code>5555</code> → <em>Party setup</em>. Create a party; the e-invite with its QR code opens.</li>
-          <li>Log in as Reception <code>3333</code> → <em>Party check-in</em>. Type the 6-letter code (a counter scanner reads the QR into the same box) and scan a few bands such as <code>A-300001</code>, <code>K-300001</code>.</li>
+          <li>Log in as Reception <code>3333</code> → <em>Party check-in</em>. Type the 6-letter code (a counter scanner reads the QR into the same box), count the guests arriving together and print their wristbands.</li>
           <li>Party bands only open the gate during the party time, with no grace period.</li>
         </ol>
 
@@ -164,11 +163,12 @@
           <li>Cashier → <em>Packages</em>: the demo account is on phone <code>0123334444</code> with 12 visits. On <em>Activate bands</em>, use <em>Use visit package…</em> to deduct visits per kid.</li>
           <li>Simulator → <em>Trigger fire alarm</em>: both gates open and every rule is ignored. Reset it after.</li>
           <li>Supervisor → <em>Handheld gate scan</em> is the backup when a reader fails; <em>Open once</em> and <em>Hold open</em> are on the dashboard. Every override asks for a reason and is logged with the staff name.</li>
-          <li>Manager <code>1111</code> → <em>Reports</em> for the day's visitors, overtime to match against StoreHub, overrides and package use; <em>Settings</em> for every rule and price.</li>
+          <li>Manager <code>1111</code> → <em>Reports</em> for the day's visitors, overtime to match against StoreHub, overrides and package use; <em>Settings</em> for every rule and price, the wristband printer, and whether the gate is checked by staff or opens by itself.</li>
+          <li>A torn or wet band: open the group and press <em>Replace…</em>. The old band stops working and a new one prints.</li>
         </ol>
 
         <div class="note">
-          <p><strong>What the test drive can't do.</strong> Downloads (CSV reports, the invite image) and printing are blocked inside this preview page. They work on the venue PC. Real gates, readers and the fire panel connect through the lane controller on site.</p>
+          <p><strong>What the test drive can't do.</strong> Printing and downloads (wristbands, CSV reports, the invite image) are blocked inside this preview page; you see an exact preview instead. They work on the venue PC. Real gates, readers and the fire panel connect through the lane controller on site.</p>
         </div>
       </div></div>
     </section>

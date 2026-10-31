@@ -283,3 +283,82 @@ export async function inviteCard({ venueName, party, qr }) {
   centered('Show this at reception when you arrive', H - 34, body(600, 32), C.ink2)
   return canvas
 }
+
+// ------------------------------------------------------------ QR wristbands
+
+const SVG = 'http://www.w3.org/2000/svg'
+const TYPE_LABEL = { adult: 'ADULT', kid: 'KID', under2: 'UNDER 2' }
+
+function svgEl(tag, attrs, text) {
+  const node = document.createElementNS(SVG, tag)
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, String(v))
+  if (text !== undefined) node.textContent = text
+  return node
+}
+
+/** A QR pattern (rows of 0/1 from the server) as one SVG path, size × size, at x,y. */
+function qrPath(rows, x, y, size) {
+  const m = size / rows.length
+  let d = ''
+  rows.forEach((row, r) => {
+    for (let c = 0; c < row.length; c++) if (row[c] === '1') d += `M${(x + c * m).toFixed(3)},${(y + r * m).toFixed(3)}h${m.toFixed(3)}v${m.toFixed(3)}h-${m.toFixed(3)}z`
+  })
+  return svgEl('path', { d, fill: '#000' })
+}
+
+/**
+ * One wristband as an SVG in millimetres (length × width), laid out the way it prints:
+ * content in the middle third, a QR before and after the text so one always faces up.
+ * Thermal printers print black only, so the band is black on white.
+ */
+export function wristbandSvg(band, { venueName, widthMm = 25, lengthMm = 254, outline = false }) {
+  const W = widthMm
+  const L = lengthMm
+  const svg = svgEl('svg', { xmlns: SVG, viewBox: `0 0 ${L} ${W}`, role: 'img', 'aria-label': `${TYPE_LABEL[band.type]} wristband ${band.barcode}` })
+  svg.append(svgEl('rect', { x: 0, y: 0, width: L, height: W, rx: outline ? 3 : 0, fill: '#fff', stroke: outline ? '#c7c7b9' : 'none', 'stroke-width': 0.4 }))
+  const start = L * 0.3
+  const qr = W * 0.74
+  const qy = (W - qr) / 2
+  svg.append(qrPath(band.qr, start, qy, qr))
+  const tx = start + qr + 4
+  const font = "Manrope, 'Plus Jakarta Sans', Arial, sans-serif"
+  svg.append(svgEl('text', { x: tx, y: W * 0.27, 'font-family': font, 'font-size': W * 0.13, 'font-weight': 700 }, venueName))
+  svg.append(svgEl('text', { x: tx, y: W * 0.55, 'font-family': font, 'font-size': W * 0.24, 'font-weight': 800 }, TYPE_LABEL[band.type]))
+  svg.append(svgEl('text', { x: tx, y: W * 0.74, 'font-family': 'ui-monospace, Menlo, Consolas, monospace', 'font-size': W * 0.12, 'font-weight': 700 }, band.barcode))
+  svg.append(svgEl('text', { x: tx, y: W * 0.9, 'font-family': font, 'font-size': W * 0.1 }, `${band.dateLabel} · ${band.groupLabel}`.slice(0, 44)))
+  svg.append(qrPath(band.qr, tx + 64, qy, qr))
+  return svg
+}
+
+/**
+ * Prints wristbands through the browser's print dialog, one band per page at the band's real size.
+ * Run Chrome with --kiosk-printing on the cashier tablet to skip the dialog entirely.
+ */
+export async function printWristbands(bands, { venueName, widthMm = 25, lengthMm = 254 }) {
+  const frame = el('iframe', { title: 'Wristband print', style: { position: 'fixed', right: '0', bottom: '0', width: '0', height: '0', border: '0' } })
+  document.body.append(frame)
+  const doc = frame.contentDocument
+  doc.open()
+  doc.write('<!doctype html><html><head><meta charset="utf-8"><title>Wristbands</title></head><body></body></html>')
+  doc.close()
+  const style = doc.createElement('style')
+  // The band feeds lengthways: each page is the band itself, with the drawing turned to run along it.
+  style.textContent = `@page { size: ${widthMm}mm ${lengthMm}mm; margin: 0 }
+    html, body { margin: 0; padding: 0 }
+    .page { width: ${widthMm}mm; height: ${lengthMm}mm; position: relative; overflow: hidden; break-after: page; page-break-after: always }
+    .page svg { position: absolute; top: 0; left: ${widthMm}mm; width: ${lengthMm}mm; height: ${widthMm}mm; transform-origin: 0 0; transform: rotate(90deg) }`
+  doc.head.append(style)
+  for (const band of bands) {
+    const page = doc.createElement('div')
+    page.className = 'page'
+    page.append(doc.importNode(wristbandSvg(band, { venueName, widthMm, lengthMm }), true))
+    doc.body.append(page)
+  }
+  await doc.fonts?.ready
+  try {
+    frame.contentWindow.focus()
+    frame.contentWindow.print()
+  } finally {
+    setTimeout(() => frame.remove(), 60_000)
+  }
+}

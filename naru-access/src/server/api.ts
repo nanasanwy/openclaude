@@ -3,9 +3,10 @@
  * The venue server (http.ts) wraps it in Bun.serve; the browser test drive calls it directly.
  */
 import type { SimClock } from '../core/clock.ts'
-import { permissionsFor, ROLE_LABELS, ROLES } from '../core/permissions.ts'
+import { can, permissionsFor, ROLE_LABELS, ROLES } from '../core/permissions.ts'
 import { AccessSystem, AppError, type Actor, type ScanSource, type SystemEvent } from '../core/system.ts'
 import { MINUTE } from '../core/time.ts'
+import { sendToPrinter, wristbandZpl, type WristbandInfo } from '../print/wristband.ts'
 import { encodeQr, qrRows } from '../qr.ts'
 
 export interface ApiOptions {
@@ -16,6 +17,8 @@ export interface ApiOptions {
   simClock?: SimClock
   /** Identifies the client device for the wrong-PIN throttle (its IP address on the venue server). */
   clientKey?: (req: Request) => string
+  /** How ZPL reaches a network wristband printer; tests replace it. */
+  sendZpl?: (address: string, port: number, zpl: string) => Promise<void>
 }
 
 export interface Api {
@@ -80,6 +83,23 @@ class LoginThrottle {
 
 export function createApi(opts: ApiOptions): Api {
   const { system, simClock } = opts
+
+  /**
+   * Prints wristbands. Zebra printers get ZPL over the network; otherwise the tablet prints them.
+   * Either way the band details and QR patterns come back so the screen can show what was printed.
+   */
+  const printWristbands = (actor: Actor, barcodes: string[]) => printInfo(system.wristbandInfo(actor, barcodes))
+  const printInfo = async (info: WristbandInfo[]) => {
+    const s = system.settings()
+    const bands = info.map(b => ({ ...b, qr: qrRows(encodeQr(b.barcode, 'M')) }))
+    if (s.wristbands.printer !== 'zebra') return { mode: 'browser', ok: true, bands }
+    try {
+      await (opts.sendZpl ?? sendToPrinter)(s.wristbands.printerAddress, s.wristbands.printerPort, wristbandZpl(info, s.venueName, s.wristbands))
+      return { mode: 'zebra', ok: true, bands }
+    } catch (err) {
+      return { mode: 'zebra', ok: false, error: (err as Error).message, bands }
+    }
+  }
   const routes: { method: string; pattern: RegExp; keys: string[]; handler: Handler }[] = []
   const throttle = new LoginThrottle()
 
@@ -130,12 +150,39 @@ export function createApi(opts: ApiOptions): Api {
 
   // ------------------------------------------------------------ activation
   route('GET', '/api/capacity', ctx => (needActor(ctx), system.capacity()))
-  route('POST', '/api/groups', ctx => system.createGroup(needActor(ctx), ctx.body))
+  route('POST', '/api/groups', async ctx => {
+    const actor = needActor(ctx)
+    const group = system.createGroup(actor, ctx.body)
+    // A sale with wristband counts prints them straight away.
+    if (!group.bands.length) return group
+    return { ...group, print: await printWristbands(actor, group.bands.map(b => b.barcode)) }
+  })
   route('GET', '/api/groups/:id', ctx => system.groupDetail(needActor(ctx), id(ctx)))
   route('POST', '/api/groups/:id/bands', ctx => system.addBand(needActor(ctx), id(ctx), ctx.body.barcode, ctx.body.type))
   route('POST', '/api/groups/:id/clear', ctx => system.clearGroup(needActor(ctx), id(ctx), ctx.body))
   route('POST', '/api/groups/:id/extend', ctx => system.extendGroup(needActor(ctx), id(ctx), ctx.body.minutes, ctx.body.reason))
   route('POST', '/api/groups/:id/close', ctx => (system.closeGroup(needActor(ctx), id(ctx), ctx.body.reason), { ok: true }))
+  route('POST', '/api/groups/:id/wristbands', async ctx => {
+    const actor = needActor(ctx)
+    const issued = system.issueBands(actor, id(ctx), ctx.body)
+    return { ...issued, print: await printWristbands(actor, issued.bands.map(b => b.barcode)) }
+  })
+  route('POST', '/api/wristbands/test', async ctx => {
+    const actor = needActor(ctx)
+    if (!can(actor.role, 'settings.manage')) throw new AppError(403, 'forbidden', 'Only a manager can print a test band')
+    const s = system.settings()
+    return printInfo([{ barcode: `${s.bandPrefixes.kid}TEST0000`, type: 'kid', groupLabel: 'Test band', dateLabel: 'Not valid' }])
+  })
+  route('POST', '/api/wristbands/print', async ctx => {
+    const barcodes = Array.isArray(ctx.body.barcodes) ? ctx.body.barcodes.map(String).slice(0, 60) : []
+    if (!barcodes.length) throw new AppError(400, 'no_bands', 'No bands to print')
+    return printWristbands(needActor(ctx), barcodes)
+  })
+  route('POST', '/api/bands/:barcode/replace', async ctx => {
+    const actor = needActor(ctx)
+    const replaced = system.replaceBand(actor, ctx.params.barcode, ctx.body.reason)
+    return { ...replaced, print: await printWristbands(actor, [replaced.barcode]) }
+  })
   route('POST', '/api/bands/:barcode/void', ctx => (system.voidBand(needActor(ctx), ctx.params.barcode, ctx.body.reason), { ok: true }))
   route('POST', '/api/bands/:barcode/release', ctx => system.releaseBand(needActor(ctx), ctx.params.barcode, String(ctx.body.lane), ctx.body.reason))
 

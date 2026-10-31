@@ -38,6 +38,20 @@ export interface Settings {
   packageExpiryMonths: number
   packageWeekdayOnly: boolean
   packageTransferFee: number
+
+  /** "manual": staff check bands at the gate with a scanner. "automatic": lane readers open the gates. */
+  gateMode: string
+  wristbands: {
+    /** "printed": the cashier prints QR wristbands per sale. "preprinted": bands come on numbered rolls. */
+    source: string
+    /** "browser": the tablet's print dialog, any wristband printer with a driver. "zebra": sent straight to a Zebra (ZPL) printer on the network. */
+    printer: string
+    printerAddress: string
+    printerPort: number
+    printerDpi: number
+    widthMm: number
+    lengthMm: number
+  }
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -73,6 +87,17 @@ export const DEFAULT_SETTINGS: Settings = {
   packageExpiryMonths: 0,
   packageWeekdayOnly: false,
   packageTransferFee: 20,
+
+  gateMode: 'manual',
+  wristbands: {
+    source: 'printed',
+    printer: 'browser',
+    printerAddress: '',
+    printerPort: 9100,
+    printerDpi: 300,
+    widthMm: 25,
+    lengthMm: 254,
+  },
 }
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
@@ -130,6 +155,14 @@ export function mergeSettings(current: Settings, patch: unknown): Settings {
     if (s.capacityWarnPercent > 100) errors.push('Capacity warning must be 100% or less')
     if (s.sessionMinutes < 1 || s.overtimeBlockMinutes < 1 || s.partyBlockMinutes < 1) errors.push('Session, block and party lengths must be at least 1 minute')
     if (s.packageVisits < 1 || !Number.isInteger(s.packageVisits)) errors.push('Package visits must be a whole number of at least 1')
+    if (!['manual', 'automatic'].includes(s.gateMode)) errors.push('Gate mode must be manual or automatic')
+    const w = s.wristbands
+    if (!['printed', 'preprinted'].includes(w.source)) errors.push('Wristband source must be printed or preprinted')
+    if (!['browser', 'zebra'].includes(w.printer)) errors.push('Wristband printer must be browser or zebra')
+    if (w.printer === 'zebra' && !/^[A-Za-z0-9.-]{1,253}$/.test(w.printerAddress)) errors.push('Enter the Zebra printer network address, e.g. 192.168.1.50')
+    if (!Number.isInteger(w.printerPort) || w.printerPort < 1 || w.printerPort > 65535) errors.push('Printer port must be 1 to 65535')
+    if (![203, 300, 600].includes(w.printerDpi)) errors.push('Printer resolution must be 203, 300 or 600 dpi')
+    if (w.widthMm < 15 || w.widthMm > 60 || w.lengthMm < 120 || w.lengthMm > 400) errors.push('Wristband size looks wrong: width 15–60 mm, length 120–400 mm')
     try {
       new Intl.DateTimeFormat('en-US', { timeZone: s.timeZone })
     } catch {

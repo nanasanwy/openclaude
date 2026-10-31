@@ -128,6 +128,35 @@ bun run lane --lane in --server http://192.168.1.10:8080 --key <data/lane-key.tx
 - Passage sensors that detect **small children**, and anti-pinch protection on the swing arms.
 - The gate's own card logic can be switched off so this system makes the decisions.
 
+## QR wristbands and staff gate check
+
+This is the default setup while the turnstiles are not connected (*Settings → Wristbands & gate*):
+
+1. **Cashier.** Take payment in StoreHub, then open *Print wristbands*, enter the receipt and table,
+   tap + for adults, kids and under-2s, and press **Print**. Each band gets a random code (for example
+   `K-7F3K9Q2M`) that nobody can guess, and a QR code. A full paid zone refuses the whole group
+   before any package visit is used.
+2. **Gate.** The supervisor (gate host) uses *Gate check* on a tablet or phone with a Bluetooth
+   barcode scanner. Choose *Coming IN* or *Going OUT* and scan. A big **LET IN** or **STOP** shows
+   what to do, with a beep. All the rules apply: timers start at the first scan in, the kids exit
+   rule, overtime, party times and capacity.
+3. **Damaged band.** *Replace…* on the group stops the old band and prints a new one.
+
+When readers and turnstiles are installed, set *How the gate works* to *Automatic gates*. The same
+QR wristbands then open the gates through the lane controllers, and nothing else changes.
+
+**Printers.**
+- *Tablet print dialog* (default) works with any wristband printer that has a driver. Each band
+  prints as one page at the band's real size (set in Settings, default 25 × 254 mm). Start Chrome
+  with `--kiosk-printing` on the cashier tablet to skip the dialog.
+- *Zebra on the network* sends ZPL straight to a Zebra wristband printer (for example the ZD510-HC)
+  on port 9100, with no dialog. This mode is untested on a real printer: use *Print a test band* in
+  Settings on setup day and adjust the size and resolution until the band looks right.
+
+**StoreHub.** StoreHub lists API access only on its Enterprise plan, and no payment notifications
+were found. Printing therefore starts from the cashier's tap after payment. If Naru gets API access
+later, the system can pull play-pass sales and queue the bands automatically.
+
 ## Birthday party e-invites
 
 When the events coordinator creates a party, the app shows an **e-invite card**: a 1080 × 1500 image
@@ -177,7 +206,7 @@ decoder (jsQR, a test-only dependency).
 ## Tests
 
 ```bash
-bun test ./test        # 55 tests, a few seconds
+bun test ./test        # 66 tests, a few seconds
 bun run typecheck
 ```
 
@@ -208,6 +237,7 @@ src/db/        SQLite schema with append-only triggers
 src/server/    HTTP API + websocket push
 src/lane/      lane controller and relay drivers (runs beside each gate)
 src/qr.ts      QR code encoder for e-invites
+src/print/     wristband printing (ZPL for Zebra printers, network send)
 src/demo/      browser test drive: sql.js and crypto adapters, page shell
 public/        staff app, gate display, simulator (plain HTML/JS, no build step)
 test/          acceptance, rules, QR and server tests

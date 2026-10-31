@@ -220,3 +220,17 @@ dialog::backdrop { background: rgba(29, 28, 22, 0.4); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
+
+/* ---------- wristband printing & gate check ---------- */
+.counters { display: grid; gap: 10px; margin: 6px 0 16px; }
+.counter { display: grid; grid-template-columns: 1fr 56px 3ch 56px; gap: 10px; align-items: center; padding: 8px 8px 8px 16px; border-radius: var(--radius-lg); background: var(--surface-low); }
+.counter-label { font-weight: 600; }
+.counter button { min-height: 52px; padding: 0; font: 700 1.6rem/1 var(--font-display); background: var(--card); }
+.counter-value { font: 800 1.6rem/1 var(--font-display); text-align: center; font-variant-numeric: tabular-nums; }
+.band-previews { display: grid; gap: 12px; }
+.band-preview { display: grid; gap: 8px; padding: 12px; border-radius: var(--radius-lg); background: var(--surface-low); }
+.band-art { overflow-x: auto; }
+.band-art svg { display: block; width: 100%; min-width: 560px; height: auto; }
+.lane-toggle { min-height: 64px; font-size: 1.1rem; }
+.decision-head { font: 800 2.6rem/1.1 var(--font-display); letter-spacing: 0.02em; }
+.decision-msg { font: 700 1.15rem/1.35 var(--font-body); margin: 6px 0 8px; }
